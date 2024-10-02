@@ -85,11 +85,12 @@ hack:
   COPY (+helm-build/output --CROSSPLANE_VERSION=v0.0.0-hack) .hack/charts
   WITH DOCKER --load crossplane-hack/crossplane:hack=+image
     RUN \
-      .hack/kind create cluster --name crossplane-hack && \
+      .hack/kind create cluster --name crossplane-hack --config kind.yml && \
       .hack/kind load docker-image --name crossplane-hack crossplane-hack/crossplane:hack && \
       .hack/helm install --create-namespace --namespace crossplane-system crossplane .hack/charts/crossplane-0.0.0-hack.tgz \
         --set "image.pullPolicy=Never,image.repository=crossplane-hack/crossplane,image.tag=hack" \
-        --set "args={--debug}"
+        --set "args={--debug}" \
+        --set "registryCaBundleConfig.name=xpkg-dev-proxy-cert" --set "registryCaBundleConfig.key=ca.crt"
   END
   RUN docker image rm crossplane-hack/crossplane:hack
   RUN rm -rf .hack
