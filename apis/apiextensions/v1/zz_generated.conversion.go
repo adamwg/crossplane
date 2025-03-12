@@ -137,6 +137,21 @@ func (c *GeneratedRevisionSpecConverter) pV1ConvertTransformToPV1ConvertTransfor
 	}
 	return pV1ConvertTransform
 }
+func (c *GeneratedRevisionSpecConverter) pV1InputBlobToPV1InputBlob(source *InputBlob) *InputBlob {
+	var pV1InputBlob *InputBlob
+	if source != nil {
+		var v1InputBlob InputBlob
+		v1InputBlob.Source = InputBlobSource((*source).Source)
+		var pString *string
+		if (*source).OCIArtifact != nil {
+			xstring := *(*source).OCIArtifact
+			pString = &xstring
+		}
+		v1InputBlob.OCIArtifact = pString
+		pV1InputBlob = &v1InputBlob
+	}
+	return pV1InputBlob
+}
 func (c *GeneratedRevisionSpecConverter) pV1MapTransformToPV1MapTransform(source *MapTransform) *MapTransform {
 	var pV1MapTransform *MapTransform
 	if source != nil {
@@ -491,6 +506,7 @@ func (c *GeneratedRevisionSpecConverter) v1PipelineStepToV1PipelineStep(source P
 	v1PipelineStep.Step = source.Step
 	v1PipelineStep.FunctionRef = c.v1FunctionReferenceToV1FunctionReference(source.FunctionRef)
 	v1PipelineStep.Input = c.pRuntimeRawExtensionToPRuntimeRawExtension(source.Input)
+	v1PipelineStep.InputBlob = c.pV1InputBlobToPV1InputBlob(source.InputBlob)
 	var v1FunctionCredentialsList []FunctionCredentials
 	if source.Credentials != nil {
 		v1FunctionCredentialsList = make([]FunctionCredentials, len(source.Credentials))

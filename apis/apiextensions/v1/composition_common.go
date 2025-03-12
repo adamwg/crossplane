@@ -296,6 +296,11 @@ type PipelineStep struct {
 	// +kubebuilder:validation:EmbeddedResource
 	Input *runtime.RawExtension `json:"input,omitempty"`
 
+	// InputBlob is an optional blob of input to be passed to the function. It
+	// may be fetched from an external source.
+	// +optional
+	InputBlob *InputBlob `json:"inputBlobRef,omitempty"`
+
 	// Credentials are optional credentials that the Composition Function needs.
 	// +optional
 	// +listType=map
@@ -346,3 +351,20 @@ type StoreConfigReference struct {
 	// Name of the referenced StoreConfig.
 	Name string `json:"name"`
 }
+
+// InputBlob indicates where to fetch an input blob from.
+type InputBlob struct {
+	Source      InputBlobSource `json:"source"`
+	OCIArtifact *string         `json:"ociArtifact,omitempty"`
+}
+
+// InputBlobSource is a source for input blobs.
+type InputBlobSource string
+
+const (
+	// InputBlobSourceNone indicates no input blob.
+	InputBlobSourceNone InputBlobSource = "None"
+
+	// InputBlobSourceOCI indicates to fetch an input blob from an OCI artifact.
+	InputBlobSourceOCI InputBlobSource = "OCI"
+)

@@ -541,6 +541,19 @@ spec:
                       type: object
                       x-kubernetes-embedded-resource: true
                       x-kubernetes-preserve-unknown-fields: true
+                    inputBlobRef:
+                      description: |-
+                        InputBlob is an optional blob of input to be passed to the function. It
+                        may be fetched from an external source.
+                      properties:
+                        ociArtifact:
+                          type: string
+                        source:
+                          description: InputBlobSource is a source for input blobs.
+                          type: string
+                      required:
+                      - source
+                      type: object
                     step:
                       description: Step name. Must be unique within its Pipeline.
                       type: string
@@ -1665,6 +1678,19 @@ spec:
                       type: object
                       x-kubernetes-embedded-resource: true
                       x-kubernetes-preserve-unknown-fields: true
+                    inputBlobRef:
+                      description: |-
+                        InputBlob is an optional blob of input to be passed to the function. It
+                        may be fetched from an external source.
+                      properties:
+                        ociArtifact:
+                          type: string
+                        source:
+                          description: InputBlobSource is a source for input blobs.
+                          type: string
+                      required:
+                      - source
+                      type: object
                     step:
                       description: Step name. Must be unique within its Pipeline.
                       type: string

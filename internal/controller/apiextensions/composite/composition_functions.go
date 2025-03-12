@@ -22,6 +22,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/google/go-containerregistry/pkg/name"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
 	corev1 "k8s.io/api/core/v1"
@@ -32,6 +34,9 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/utils/ptr"
+	"oras.land/oras-go/v2"
+	"oras.land/oras-go/v2/content"
+	"oras.land/oras-go/v2/registry/remote"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
@@ -43,7 +48,6 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured"
 	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/composed"
 	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/composite"
-
 	fnv1 "github.com/crossplane/crossplane/apis/apiextensions/fn/proto/v1"
 	v1 "github.com/crossplane/crossplane/apis/apiextensions/v1"
 	"github.com/crossplane/crossplane/internal/names"
@@ -290,6 +294,46 @@ func (c *FunctionComposer) Compose(ctx context.Context, xr *composite.Unstructur
 				return CompositionResult{}, errors.Wrapf(err, errFmtUnmarshalPipelineStepInput, fn.Step)
 			}
 			req.Input = in
+		}
+
+		if fn.InputBlob != nil {
+			switch fn.InputBlob.Source {
+			case v1.InputBlobSourceNone:
+				// Nothing to do.
+
+			case v1.InputBlobSourceOCI:
+				ref, err := name.ParseReference(*fn.InputBlob.OCIArtifact)
+				if err != nil {
+					return CompositionResult{}, errors.Wrap(err, "failed to parse OCI blob source")
+				}
+
+				repo, err := remote.NewRepository(ref.Context().String())
+				if err != nil {
+					return CompositionResult{}, errors.Wrap(err, "failed to construct repository for OCI blob source")
+				}
+
+				_, mfstBytes, err := oras.FetchBytes(ctx, repo, ref.Identifier(), oras.DefaultFetchBytesOptions)
+				if err != nil {
+					return CompositionResult{}, errors.Wrap(err, "failed to fetch manifest for OCI blob source")
+				}
+
+				var mfst ocispec.Manifest
+				if err := json.Unmarshal(mfstBytes, &mfst); err != nil {
+					return CompositionResult{}, errors.Wrap(err, "failed to unmarshal manifest for OCI blob source")
+				}
+
+				if len(mfst.Layers) != 1 {
+					return CompositionResult{}, errors.Errorf("wrong number of layers for OCI blob source; wanted 1 got %d", len(mfst.Layers))
+				}
+				layer := mfst.Layers[0]
+
+				bs, err := content.FetchAll(ctx, repo, layer)
+				if err != nil {
+					return CompositionResult{}, errors.Wrap(err, "failed to fetch OCI blob source")
+				}
+
+				req.InputBlob = bs
+			}
 		}
 
 		req.Credentials = map[string]*fnv1.Credentials{}

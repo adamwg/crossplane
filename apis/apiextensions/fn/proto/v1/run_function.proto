@@ -72,6 +72,11 @@ message RunFunctionRequest {
   // Optional credentials that this Function may use to communicate with an
   // external system.
   map <string, Credentials> credentials = 7;
+
+  // Optional input specific to this Function invocation, in the form of a blob
+  // of data. This can be used, for example, to pass a bundle of code to be
+  // executed by a generic language runtime function.
+  bytes input_blob = 8;
 }
 
 // Credentials that a Function may use to communicate with an external system.
