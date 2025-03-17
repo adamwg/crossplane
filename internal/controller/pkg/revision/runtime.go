@@ -24,7 +24,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 
 	"github.com/crossplane/crossplane-runtime/pkg/meta"
-
 	v1 "github.com/crossplane/crossplane/apis/pkg/v1"
 	"github.com/crossplane/crossplane/apis/pkg/v1alpha1"
 	"github.com/crossplane/crossplane/apis/pkg/v1beta1"
@@ -334,6 +333,9 @@ func (b *RuntimeManifestBuilder) podSelectors() map[string]string {
 }
 
 func (b *RuntimeManifestBuilder) packageName() string {
+	if _, ok := b.revision.(*v1.FunctionRevision); ok {
+		return b.revision.GetName()
+	}
 	return b.revision.GetLabels()[v1.LabelParentPackage]
 }
 

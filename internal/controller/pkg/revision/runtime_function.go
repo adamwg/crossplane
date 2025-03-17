@@ -31,7 +31,6 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/pkg/meta"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
-
 	pkgmetav1 "github.com/crossplane/crossplane/apis/pkg/meta/v1"
 	v1 "github.com/crossplane/crossplane/apis/pkg/v1"
 	"github.com/crossplane/crossplane/internal/initializer"
@@ -159,14 +158,14 @@ func (h *FunctionHooks) Post(ctx context.Context, pkg runtime.Object, pr v1.Pack
 
 // Deactivate performs operations meant to happen before deactivating a revision.
 func (h *FunctionHooks) Deactivate(ctx context.Context, _ v1.PackageRevisionWithRuntime, build ManifestBuilder) error {
-	sa := build.ServiceAccount()
+	//	sa := build.ServiceAccount()
 	// Delete the deployment if it exists.
 	// Different from the Post runtimeHook, we don't need to pass the
 	// "functionDeploymentOverrides()" here, because we're only interested
 	// in the name and namespace of the deployment to delete it.
-	if err := h.client.Delete(ctx, build.Deployment(sa.Name)); resource.IgnoreNotFound(err) != nil {
-		return errors.Wrap(err, errDeleteFunctionDeployment)
-	}
+	//	if err := h.client.Delete(ctx, build.Deployment(sa.Name)); resource.IgnoreNotFound(err) != nil {
+	//		return errors.Wrap(err, errDeleteFunctionDeployment)
+	//	}
 
 	// NOTE(turkenh): We don't delete the service account here because it might
 	// be used by other package revisions, e.g. user might have specified a
