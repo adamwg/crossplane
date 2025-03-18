@@ -30,9 +30,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/crossplane/crossplane-runtime/pkg/test"
-
 	fnv1 "github.com/crossplane/crossplane/apis/apiextensions/fn/proto/v1"
 	fnv1beta1 "github.com/crossplane/crossplane/apis/apiextensions/fn/proto/v1beta1"
+	v1 "github.com/crossplane/crossplane/apis/apiextensions/v1"
 	pkgv1 "github.com/crossplane/crossplane/apis/pkg/v1"
 )
 
@@ -235,7 +235,7 @@ func TestRunFunction(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			r := NewPackagedFunctionRunner(tc.params.c, tc.params.o...)
-			rsp, err := r.RunFunction(tc.args.ctx, tc.args.name, tc.args.req)
+			rsp, err := r.RunFunction(tc.args.ctx, &v1.FunctionReference{Name: tc.args.name}, tc.args.req)
 
 			if diff := cmp.Diff(tc.want.rsp, rsp, protocmp.Transform()); diff != "" {
 				t.Errorf("\n%s\nr.RunFunction(...): -want, +got:\n%s", tc.reason, diff)
@@ -281,7 +281,7 @@ func TestGetClientConn(t *testing.T) {
 
 	// We should be able to create a new connection.
 	t.Run("CreateNewConnection", func(t *testing.T) {
-		conn, err := r.getClientConn(context.Background(), "cool-fn")
+		conn, err := r.getClientConn(context.Background(), &v1.FunctionReference{Name: "cool-fn"})
 
 		if diff := cmp.Diff(target, conn.Target()); diff != "" {
 			t.Errorf("\nr.getClientConn(...): -want, +got:\n%s", diff)
@@ -294,7 +294,7 @@ func TestGetClientConn(t *testing.T) {
 	// If we're called again and our FunctionRevision's endpoint hasn't changed,
 	// we should return our cached connection.
 	t.Run("ReuseExistingConnection", func(t *testing.T) {
-		conn, err := r.getClientConn(context.Background(), "cool-fn")
+		conn, err := r.getClientConn(context.Background(), &v1.FunctionReference{Name: "cool-fn"})
 
 		if diff := cmp.Diff(target, conn.Target()); diff != "" {
 			t.Errorf("\nr.getClientConn(...): -want, +got:\n%s", diff)
@@ -316,7 +316,7 @@ func TestGetClientConn(t *testing.T) {
 	// If we're called again and our FunctionRevision's endpoint _has_ changed,
 	// we should close our cached connection and create a new one.
 	t.Run("ReplaceExistingConnection", func(t *testing.T) {
-		conn, err := r.getClientConn(context.Background(), "cool-fn")
+		conn, err := r.getClientConn(context.Background(), &v1.FunctionReference{Name: "cool-fn"})
 
 		if diff := cmp.Diff(target, conn.Target()); diff != "" {
 			t.Errorf("\nr.getClientConn(...): -want, +got:\n%s", diff)

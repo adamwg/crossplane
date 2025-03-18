@@ -23,7 +23,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
-
 	"github.com/crossplane/crossplane/internal/validation/errors"
 )
 
@@ -308,6 +307,16 @@ type PipelineStep struct {
 type FunctionReference struct {
 	// Name of the referenced Function.
 	Name string `json:"name"`
+	// RevisionSelector indicates which revision of the function to use.
+	RevisionSelector *FunctionRevisionSelector `json:"revisionSelector,omitempty"`
+}
+
+// FunctionRevisionSelector ...
+type FunctionRevisionSelector struct {
+	// Name matches the revision by name.
+	Name string `json:"name,omitempty"`
+	// MatchLabels matches the revision using labels.
+	MatchLabels map[string]string `json:"matchLabels,omitempty"`
 }
 
 // FunctionCredentials are optional credentials that a Composition Function

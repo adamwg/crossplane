@@ -530,6 +530,20 @@ spec:
                         name:
                           description: Name of the referenced Function.
                           type: string
+                        revisionSelector:
+                          description: RevisionSelector indicates which revision of
+                            the function to use.
+                          properties:
+                            matchLabels:
+                              additionalProperties:
+                                type: string
+                              description: MatchLabels matches the revision using
+                                labels.
+                              type: object
+                            name:
+                              description: Name matches the revision by name.
+                              type: string
+                          type: object
                       required:
                       - name
                       type: object
@@ -1654,6 +1668,20 @@ spec:
                         name:
                           description: Name of the referenced Function.
                           type: string
+                        revisionSelector:
+                          description: RevisionSelector indicates which revision of
+                            the function to use.
+                          properties:
+                            matchLabels:
+                              additionalProperties:
+                                type: string
+                              description: MatchLabels matches the revision using
+                                labels.
+                              type: object
+                            name:
+                              description: Name matches the revision by name.
+                              type: string
+                          type: object
                       required:
                       - name
                       type: object

@@ -42,7 +42,6 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/meta"
 	"github.com/crossplane/crossplane-runtime/pkg/ratelimiter"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
-
 	v1 "github.com/crossplane/crossplane/apis/pkg/v1"
 	"github.com/crossplane/crossplane/apis/pkg/v1beta1"
 	"github.com/crossplane/crossplane/internal/controller/pkg/controller"
@@ -455,9 +454,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		r.record.Event(p, event.Normal(reasonImageConfig, fmt.Sprintf("Selected pullSecret %q from ImageConfig %q for registry authentication", pullSecretFromConfig, imageConfig)))
 	}
 
+	labels := map[string]string{v1.LabelParentPackage: p.GetName()}
+	for k, v := range p.GetLabels() {
+		labels[k] = v
+	}
+
 	// Create the non-existent package revision.
 	pr.SetName(revisionName)
-	pr.SetLabels(map[string]string{v1.LabelParentPackage: p.GetName()})
+	pr.SetLabels(labels)
 	pr.SetSource(p.GetSource())
 	pr.SetPackagePullPolicy(p.GetPackagePullPolicy())
 	pr.SetPackagePullSecrets(p.GetPackagePullSecrets())
@@ -470,7 +474,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	if pwok && prok {
 		prwr.SetRuntimeConfigRef(pwr.GetRuntimeConfigRef())
 		prwr.SetControllerConfigRef(pwr.GetControllerConfigRef())
-		prwr.SetTLSServerSecretName(pwr.GetTLSServerSecretName())
+		prwr.SetTLSServerSecretName(&revisionName)
 		prwr.SetTLSClientSecretName(pwr.GetTLSClientSecretName())
 	}
 

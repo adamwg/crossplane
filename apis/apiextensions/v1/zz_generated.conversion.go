@@ -137,6 +137,23 @@ func (c *GeneratedRevisionSpecConverter) pV1ConvertTransformToPV1ConvertTransfor
 	}
 	return pV1ConvertTransform
 }
+func (c *GeneratedRevisionSpecConverter) pV1FunctionRevisionSelectorToPV1FunctionRevisionSelector(source *FunctionRevisionSelector) *FunctionRevisionSelector {
+	var pV1FunctionRevisionSelector *FunctionRevisionSelector
+	if source != nil {
+		var v1FunctionRevisionSelector FunctionRevisionSelector
+		v1FunctionRevisionSelector.Name = (*source).Name
+		var mapStringString map[string]string
+		if (*source).MatchLabels != nil {
+			mapStringString = make(map[string]string, len((*source).MatchLabels))
+			for key, value := range (*source).MatchLabels {
+				mapStringString[key] = value
+			}
+		}
+		v1FunctionRevisionSelector.MatchLabels = mapStringString
+		pV1FunctionRevisionSelector = &v1FunctionRevisionSelector
+	}
+	return pV1FunctionRevisionSelector
+}
 func (c *GeneratedRevisionSpecConverter) pV1MapTransformToPV1MapTransform(source *MapTransform) *MapTransform {
 	var pV1MapTransform *MapTransform
 	if source != nil {
@@ -408,6 +425,7 @@ func (c *GeneratedRevisionSpecConverter) v1FunctionCredentialsToV1FunctionCreden
 func (c *GeneratedRevisionSpecConverter) v1FunctionReferenceToV1FunctionReference(source FunctionReference) FunctionReference {
 	var v1FunctionReference FunctionReference
 	v1FunctionReference.Name = source.Name
+	v1FunctionReference.RevisionSelector = c.pV1FunctionRevisionSelectorToPV1FunctionRevisionSelector(source.RevisionSelector)
 	return v1FunctionReference
 }
 func (c *GeneratedRevisionSpecConverter) v1JSONToV1JSON(source v1.JSON) v1.JSON {

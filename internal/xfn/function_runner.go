@@ -29,12 +29,13 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"k8s.io/apimachinery/pkg/labels"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/crossplane/crossplane-runtime/pkg/logging"
-
 	fnv1 "github.com/crossplane/crossplane/apis/apiextensions/fn/proto/v1"
 	fnv1beta1 "github.com/crossplane/crossplane/apis/apiextensions/fn/proto/v1beta1"
+	v1 "github.com/crossplane/crossplane/apis/apiextensions/v1"
 	pkgv1 "github.com/crossplane/crossplane/apis/pkg/v1"
 )
 
@@ -141,14 +142,14 @@ func NewPackagedFunctionRunner(c client.Reader, o ...PackagedFunctionRunnerOptio
 
 // RunFunction sends the supplied RunFunctionRequest to the named Function. The
 // function is expected to be an installed Function.pkg.crossplane.io package.
-func (r *PackagedFunctionRunner) RunFunction(ctx context.Context, name string, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error) {
-	conn, err := r.getClientConn(ctx, name)
+func (r *PackagedFunctionRunner) RunFunction(ctx context.Context, ref *v1.FunctionReference, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error) {
+	conn, err := r.getClientConn(ctx, ref)
 	if err != nil {
-		return nil, errors.Wrapf(err, errFmtGetClientConn, name)
+		return nil, errors.Wrapf(err, errFmtGetClientConn, ref.Name)
 	}
 
 	rsp, err := NewBetaFallBackFunctionRunnerServiceClient(conn).RunFunction(ctx, req)
-	return rsp, errors.Wrapf(err, errFmtRunFunction, name)
+	return rsp, errors.Wrapf(err, errFmtRunFunction, ref.Name)
 }
 
 // In most cases our gRPC target will be a Kubernetes Service. The package
@@ -174,17 +175,31 @@ func (r *PackagedFunctionRunner) RunFunction(ctx context.Context, name string, r
 // cost of listing and iterating over FunctionRevisions from cache. The default
 // RevisionHistoryLimit is 1, so for most Functions we'd expect there to be two
 // revisions in the cache (one active, and one previously active).
-func (r *PackagedFunctionRunner) getClientConn(ctx context.Context, name string) (*grpc.ClientConn, error) {
-	log := r.log.WithValues("function", name)
+func (r *PackagedFunctionRunner) getClientConn(ctx context.Context, ref *v1.FunctionReference) (*grpc.ClientConn, error) {
+	log := r.log.WithValues("function", ref.Name)
 
 	l := &pkgv1.FunctionRevisionList{}
-	if err := r.client.List(ctx, l, client.MatchingLabels{pkgv1.LabelParentPackage: name}); err != nil {
+	if err := r.client.List(ctx, l, client.MatchingLabels{pkgv1.LabelParentPackage: ref.Name}); err != nil {
 		return nil, errors.Wrapf(err, errListFunctionRevisions)
 	}
 
 	var active *pkgv1.FunctionRevision
-	for i := range l.Items {
-		if l.Items[i].GetDesiredState() == pkgv1.PackageRevisionActive {
+	if ref.RevisionSelector == nil {
+		for i := range l.Items {
+			if l.Items[i].GetDesiredState() == pkgv1.PackageRevisionActive {
+				active = &l.Items[i]
+				break
+			}
+		}
+	} else {
+		ls := labels.SelectorFromSet(ref.RevisionSelector.MatchLabels)
+		for i := range l.Items {
+			if ref.RevisionSelector.Name != "" && l.Items[i].GetName() != ref.RevisionSelector.Name {
+				continue
+			}
+			if !ls.Empty() && !ls.Matches(labels.Set(l.Items[i].GetLabels())) {
+				continue
+			}
 			active = &l.Items[i]
 			break
 		}
@@ -196,10 +211,11 @@ func (r *PackagedFunctionRunner) getClientConn(ctx context.Context, name string)
 	if active.Status.Endpoint == "" {
 		return nil, errors.Errorf(errFmtEmptyEndpoint, active.GetName())
 	}
+	revName := active.GetName()
 
 	// If we have a connection for the up-to-date endpoint, return it.
 	r.connsMx.RLock()
-	conn, ok := r.conns[name]
+	conn, ok := r.conns[revName]
 	if ok && conn.Target() == active.Status.Endpoint {
 		defer r.connsMx.RUnlock()
 		return conn, nil
@@ -212,7 +228,7 @@ func (r *PackagedFunctionRunner) getClientConn(ctx context.Context, name string)
 
 	// Another Goroutine might have updated the connections between when we
 	// released the read lock and took the write lock, so check again.
-	conn, ok = r.conns[name]
+	conn, ok = r.conns[revName]
 	if ok {
 		// We now have a connection for the up-to-date endpoint.
 		if conn.Target() == active.Status.Endpoint {
@@ -224,12 +240,12 @@ func (r *PackagedFunctionRunner) getClientConn(ctx context.Context, name string)
 		// already closed or in the process of closing.
 		log.Debug("Closing gRPC client connection with stale target", "old-target", conn.Target(), "new-target", active.Status.Endpoint)
 		_ = conn.Close()
-		delete(r.conns, name)
+		delete(r.conns, revName)
 	}
 
 	is := make([]grpc.UnaryClientInterceptor, len(r.interceptors))
 	for i := range r.interceptors {
-		is[i] = r.interceptors[i].CreateInterceptor(name, active.Spec.Package)
+		is[i] = r.interceptors[i].CreateInterceptor(revName, active.Spec.Package)
 	}
 
 	conn, err := grpc.NewClient(active.Status.Endpoint,
@@ -240,7 +256,7 @@ func (r *PackagedFunctionRunner) getClientConn(ctx context.Context, name string)
 		return nil, errors.Wrapf(err, errFmtDialFunction, active.Status.Endpoint, active.GetName())
 	}
 
-	r.conns[name] = conn
+	r.conns[revName] = conn
 
 	log.Debug("Created new gRPC client connection", "target", active.Status.Endpoint)
 	return conn, nil
@@ -286,20 +302,20 @@ func (r *PackagedFunctionRunner) GarbageCollectConnectionsNow(ctx context.Contex
 	r.connsMx.Lock()
 	defer r.connsMx.Unlock()
 
-	l := &pkgv1.FunctionList{}
+	l := &pkgv1.FunctionRevisionList{}
 	if err := r.client.List(ctx, l); err != nil {
 		return 0, errors.Wrap(err, errListFunctions)
 	}
 
-	functionExists := map[string]bool{}
+	functionRevExists := map[string]bool{}
 	for _, f := range l.Items {
-		functionExists[f.GetName()] = true
+		functionRevExists[f.GetName()] = true
 	}
 
 	// Garbage collect connections.
 	closed := 0
 	for name := range r.conns {
-		if functionExists[name] {
+		if functionRevExists[name] {
 			continue
 		}
 

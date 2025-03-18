@@ -43,7 +43,6 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured"
 	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/composed"
 	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/composite"
-
 	fnv1 "github.com/crossplane/crossplane/apis/apiextensions/fn/proto/v1"
 	v1 "github.com/crossplane/crossplane/apis/apiextensions/v1"
 	"github.com/crossplane/crossplane/internal/names"
@@ -118,15 +117,15 @@ type xr struct {
 // A FunctionRunner runs a single Composition Function.
 type FunctionRunner interface {
 	// RunFunction runs the named Composition Function.
-	RunFunction(ctx context.Context, name string, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error)
+	RunFunction(ctx context.Context, ref *v1.FunctionReference, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error)
 }
 
 // A FunctionRunnerFn is a function that can run a Composition Function.
-type FunctionRunnerFn func(ctx context.Context, name string, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error)
+type FunctionRunnerFn func(ctx context.Context, ref *v1.FunctionReference, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error)
 
 // RunFunction runs the named Composition Function with the supplied request.
-func (fn FunctionRunnerFn) RunFunction(ctx context.Context, name string, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error) {
-	return fn(ctx, name, req)
+func (fn FunctionRunnerFn) RunFunction(ctx context.Context, ref *v1.FunctionReference, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error) {
+	return fn(ctx, ref, req)
 }
 
 // A ComposedResourceObserver observes existing composed resources.
@@ -314,7 +313,7 @@ func (c *FunctionComposer) Compose(ctx context.Context, xr *composite.Unstructur
 
 		// TODO(negz): Generate a content-addressable tag for this request.
 		// Perhaps using https://github.com/cerbos/protoc-gen-go-hashpb ?
-		rsp, err := c.pipeline.RunFunction(ctx, fn.FunctionRef.Name, req)
+		rsp, err := c.pipeline.RunFunction(ctx, &fn.FunctionRef, req)
 		if err != nil {
 			return CompositionResult{}, errors.Wrapf(err, errFmtRunPipelineStep, fn.Step)
 		}

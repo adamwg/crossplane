@@ -39,7 +39,6 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
 	"github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/composed"
 	ucomposite "github.com/crossplane/crossplane-runtime/pkg/resource/unstructured/composite"
-
 	fnv1 "github.com/crossplane/crossplane/apis/apiextensions/fn/proto/v1"
 	apiextensionsv1 "github.com/crossplane/crossplane/apis/apiextensions/v1"
 	pkgv1 "github.com/crossplane/crossplane/apis/pkg/v1"
@@ -130,13 +129,13 @@ func NewRuntimeFunctionRunner(ctx context.Context, log logging.Logger, fns []pkg
 }
 
 // RunFunction runs the named function.
-func (r *RuntimeFunctionRunner) RunFunction(ctx context.Context, name string, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error) {
+func (r *RuntimeFunctionRunner) RunFunction(ctx context.Context, ref *apiextensionsv1.FunctionReference, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error) {
 	r.mx.Lock()
 	defer r.mx.Unlock()
 
-	conn, ok := r.conns[name]
+	conn, ok := r.conns[ref.Name]
 	if !ok {
-		return nil, errors.Errorf("unknown Function %q - does it exist in your Functions file?", name)
+		return nil, errors.Errorf("unknown Function %q - does it exist in your Functions file?", ref.Name)
 	}
 
 	return xfn.NewBetaFallBackFunctionRunnerServiceClient(conn).RunFunction(ctx, req)
@@ -260,7 +259,7 @@ func Render(ctx context.Context, log logging.Logger, in Inputs) (Outputs, error)
 			}
 		}
 
-		rsp, err := runner.RunFunction(ctx, fn.FunctionRef.Name, req)
+		rsp, err := runner.RunFunction(ctx, &fn.FunctionRef, req)
 		if err != nil {
 			return Outputs{}, errors.Wrapf(err, "cannot run pipeline step %q", fn.Step)
 		}
