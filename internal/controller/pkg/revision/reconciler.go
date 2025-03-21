@@ -45,7 +45,6 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/parser"
 	"github.com/crossplane/crossplane-runtime/pkg/ratelimiter"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
-
 	pkgmetav1 "github.com/crossplane/crossplane/apis/pkg/meta/v1"
 	v1 "github.com/crossplane/crossplane/apis/pkg/v1"
 	"github.com/crossplane/crossplane/apis/pkg/v1alpha1"
@@ -335,15 +334,15 @@ func SetupProviderRevision(mgr ctrl.Manager, o controller.Options) error {
 		WithFeatureFlags(o.Features),
 	}
 
-	if o.PackageRuntime == controller.PackageRuntimeDeployment {
-		ro = append(ro, WithRuntimeHooks(NewProviderHooks(mgr.GetClient(), o.DefaultRegistry)))
+	//	if o.PackageRuntime == controller.PackageRuntimeDeployment {
+	ro = append(ro, WithRuntimeHooks(NewProviderHooks(mgr.GetClient(), o.DefaultRegistry)))
 
-		if o.Features.Enabled(features.EnableBetaDeploymentRuntimeConfigs) {
-			cb = cb.Watches(&v1beta1.DeploymentRuntimeConfig{}, &EnqueueRequestForReferencingProviderRevisions{
-				client: mgr.GetClient(),
-			})
-		}
+	if o.Features.Enabled(features.EnableBetaDeploymentRuntimeConfigs) {
+		cb = cb.Watches(&v1beta1.DeploymentRuntimeConfig{}, &EnqueueRequestForReferencingProviderRevisions{
+			client: mgr.GetClient(),
+		})
 	}
+	//	}
 
 	return cb.WithOptions(o.ForControllerRuntime()).
 		Complete(ratelimiter.NewReconciler(name, errors.WithSilentRequeueOnConflict(NewReconciler(mgr, ro...)), o.GlobalRateLimiter))
