@@ -23,6 +23,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	corev1 "k8s.io/api/core/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -288,6 +289,13 @@ func TestTLSCertificateGeneratorRun(t *testing.T) {
 						return errBoom
 					},
 				},
+				certificate: &MockCertificateGenerator{
+					MockParse: func([]byte) (*x509.Certificate, error) {
+						return &x509.Certificate{
+							DNSNames: []string{subject},
+						}, nil
+					},
+				},
 				opts: []TLSCertificateGeneratorOption{
 					TLSCertificateGeneratorWithServerSecretName(tlsServerSecretName, []string{subject}),
 					TLSCertificateGeneratorWithClientSecretName(tlsClientSecretName, []string{subject}),
@@ -376,8 +384,8 @@ func TestTLSCertificateGeneratorRun(t *testing.T) {
 				},
 			},
 		},
-		"SuccessfulCertificatesComplete": {
-			reason: "It should be successful if the CA and TLS certificates are already in the Secret.",
+		"SuccessfulCertificatesUpToDate": {
+			reason: "It should be successful if the CA and TLS certificates are already up-to-date in the Secret.",
 			args: args{
 				kube: &test.MockClient{
 					MockGet: func(_ context.Context, key client.ObjectKey, obj client.Object) error {
@@ -412,6 +420,13 @@ func TestTLSCertificateGeneratorRun(t *testing.T) {
 							return nil
 						}
 						return errors.New("unexpected secret name or namespace")
+					},
+				},
+				certificate: &MockCertificateGenerator{
+					MockParse: func([]byte) (*x509.Certificate, error) {
+						return &x509.Certificate{
+							DNSNames: []string{subject},
+						}, nil
 					},
 				},
 				opts: []TLSCertificateGeneratorOption{
@@ -527,7 +542,7 @@ func TestTLSCertificateGeneratorRun(t *testing.T) {
 			},
 		},
 		"OnlyServerCertificateSuccessfulServerSecretComplete": {
-			reason: "It should be successful if the server certificates are already in the Secret.",
+			reason: "It should be successful if the server certificates are already up-to-date in the Secret.",
 			args: args{
 				kube: &test.MockClient{
 					MockGet: func(_ context.Context, key client.ObjectKey, obj client.Object) error {
@@ -556,14 +571,21 @@ func TestTLSCertificateGeneratorRun(t *testing.T) {
 						return nil
 					},
 				},
+				certificate: &MockCertificateGenerator{
+					MockParse: func([]byte) (*x509.Certificate, error) {
+						return &x509.Certificate{
+							DNSNames: []string{subject},
+						}, nil
+					},
+				},
 				opts: []TLSCertificateGeneratorOption{
 					TLSCertificateGeneratorWithServerSecretName(tlsServerSecretName, []string{subject}),
 				},
 			},
 			want: want{err: nil},
 		},
-		"OnlyServerCertificateSuccessfulGeneratedServerCert": {
-			reason: "It should be successful if the server certificate is generated and put into the Secret.",
+		"OnlyServerCertificateSuccessfulUpdatedServerCert": {
+			reason: "It should be successful if the server certificate is updated and put into the Secret.",
 			args: args{
 				kube: &test.MockClient{
 					MockGet: func(_ context.Context, key client.ObjectKey, obj client.Object) error {
@@ -592,6 +614,59 @@ func TestTLSCertificateGeneratorRun(t *testing.T) {
 						return errors.New("unexpected secret name or namespace")
 					},
 					MockUpdate: func(_ context.Context, obj client.Object, _ ...client.UpdateOption) error {
+						if obj.GetName() == tlsServerSecretName && obj.GetNamespace() == secretNS {
+							s := &corev1.Secret{
+								Data: map[string][]byte{
+									corev1.TLSCertKey:       []byte("cert"),
+									corev1.TLSPrivateKeyKey: []byte("key"),
+								},
+							}
+							s.DeepCopyInto(obj.(*corev1.Secret))
+							return nil
+						}
+
+						return errors.New("unexpected secret name or namespace")
+					},
+				},
+
+				certificate: &MockCertificateGenerator{
+					MockGenerate: func(_ *x509.Certificate, _ *CertificateSigner) ([]byte, []byte, error) {
+						return []byte(caKey), []byte(caCert), nil
+					},
+					MockParse: func([]byte) (*x509.Certificate, error) {
+						return &x509.Certificate{
+							DNSNames: []string{"some-other-dns-name"},
+						}, nil
+					},
+				},
+				opts: []TLSCertificateGeneratorOption{
+					TLSCertificateGeneratorWithServerSecretName(tlsServerSecretName, []string{subject}),
+				},
+			},
+		},
+		"OnlyServerCertificateSuccessfulGeneratedServerCert": {
+			reason: "It should be successful if the server certificate is generated and put into the Secret.",
+			args: args{
+				kube: &test.MockClient{
+					MockGet: func(_ context.Context, key client.ObjectKey, obj client.Object) error {
+						if key.Name == caCertSecretName && key.Namespace == secretNS {
+							s := &corev1.Secret{
+								Data: map[string][]byte{
+									corev1.TLSCertKey:       []byte(caCert),
+									corev1.TLSPrivateKeyKey: []byte(caKey),
+								},
+							}
+							s.DeepCopyInto(obj.(*corev1.Secret))
+							return nil
+						}
+
+						if key.Name == tlsServerSecretName && key.Namespace == secretNS {
+							return kerrors.NewNotFound(corev1.Resource("Secret"), key.Name)
+						}
+
+						return errors.New("unexpected secret name or namespace")
+					},
+					MockCreate: func(_ context.Context, obj client.Object, _ ...client.CreateOption) error {
 						if obj.GetName() == tlsServerSecretName && obj.GetNamespace() == secretNS {
 							s := &corev1.Secret{
 								Data: map[string][]byte{
@@ -670,7 +745,7 @@ func TestTLSCertificateGeneratorRun(t *testing.T) {
 			},
 		},
 		"OnlyClientCertificateSuccessfulClientSecretComplete": {
-			reason: "It should be successful if the client certificates are already in the Secret.",
+			reason: "It should be successful if the client certificates are already up-to-date in the Secret.",
 			args: args{
 				kube: &test.MockClient{
 					MockGet: func(_ context.Context, key client.ObjectKey, obj client.Object) error {
@@ -699,14 +774,21 @@ func TestTLSCertificateGeneratorRun(t *testing.T) {
 						return nil
 					},
 				},
+				certificate: &MockCertificateGenerator{
+					MockParse: func([]byte) (*x509.Certificate, error) {
+						return &x509.Certificate{
+							DNSNames: []string{subject},
+						}, nil
+					},
+				},
 				opts: []TLSCertificateGeneratorOption{
 					TLSCertificateGeneratorWithClientSecretName(tlsClientSecretName, []string{subject}),
 				},
 			},
 			want: want{err: nil},
 		},
-		"OnlyClientCertificateSuccessfulGeneratedClientCert": {
-			reason: "It should be successful if the client certificate is generated and put into the Secret.",
+		"OnlyClientCertificateSuccessfulUpdatedClientCert": {
+			reason: "It should be successful if the client certificate is updated and put into the Secret.",
 			args: args{
 				kube: &test.MockClient{
 					MockGet: func(_ context.Context, key client.ObjectKey, obj client.Object) error {
@@ -735,6 +817,59 @@ func TestTLSCertificateGeneratorRun(t *testing.T) {
 						return errors.New("unexpected secret name or namespace")
 					},
 					MockUpdate: func(_ context.Context, obj client.Object, _ ...client.UpdateOption) error {
+						if obj.GetName() == tlsClientSecretName && obj.GetNamespace() == secretNS {
+							s := &corev1.Secret{
+								Data: map[string][]byte{
+									corev1.TLSCertKey:       []byte("cert"),
+									corev1.TLSPrivateKeyKey: []byte("key"),
+								},
+							}
+							s.DeepCopyInto(obj.(*corev1.Secret))
+							return nil
+						}
+
+						return errors.New("unexpected secret name or namespace")
+					},
+				},
+
+				certificate: &MockCertificateGenerator{
+					MockGenerate: func(_ *x509.Certificate, _ *CertificateSigner) ([]byte, []byte, error) {
+						return []byte(caKey), []byte(caCert), nil
+					},
+					MockParse: func([]byte) (*x509.Certificate, error) {
+						return &x509.Certificate{
+							DNSNames: []string{"some-other-dns-name"},
+						}, nil
+					},
+				},
+				opts: []TLSCertificateGeneratorOption{
+					TLSCertificateGeneratorWithClientSecretName(tlsClientSecretName, []string{subject}),
+				},
+			},
+		},
+		"OnlyClientCertificateSuccessfulGeneratedClientCert": {
+			reason: "It should be successful if the client certificate is generated and put into the Secret.",
+			args: args{
+				kube: &test.MockClient{
+					MockGet: func(_ context.Context, key client.ObjectKey, obj client.Object) error {
+						if key.Name == caCertSecretName && key.Namespace == secretNS {
+							s := &corev1.Secret{
+								Data: map[string][]byte{
+									corev1.TLSCertKey:       []byte(caCert),
+									corev1.TLSPrivateKeyKey: []byte(caKey),
+								},
+							}
+							s.DeepCopyInto(obj.(*corev1.Secret))
+							return nil
+						}
+
+						if key.Name == tlsClientSecretName && key.Namespace == secretNS {
+							return kerrors.NewNotFound(corev1.Resource("Secret"), key.Name)
+						}
+
+						return errors.New("unexpected secret name or namespace")
+					},
+					MockCreate: func(_ context.Context, obj client.Object, _ ...client.CreateOption) error {
 						if obj.GetName() == tlsClientSecretName && obj.GetNamespace() == secretNS {
 							s := &corev1.Secret{
 								Data: map[string][]byte{

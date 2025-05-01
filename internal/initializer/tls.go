@@ -185,11 +185,12 @@ func (e *TLSCertificateGenerator) ensureClientCertificate(ctx context.Context, k
 	create := true
 	if err == nil {
 		create = false
-		if len(sec.Data[corev1.TLSPrivateKeyKey]) != 0 || len(sec.Data[corev1.TLSCertKey]) != 0 || len(sec.Data[SecretKeyCACert]) != 0 {
-			e.log.Info("TLS secret contains client certificate.", "secret", nn.Name)
+		if e.certificateUpToDate(sec, e.tlsClientDNSNames) {
+			e.log.Info("TLS secret contains up-to-date client certificate.", "secret", nn.Name)
 			return nil
 		}
 	}
+
 	dnsNames := e.tlsClientDNSNames
 	if len(dnsNames) == 0 {
 		return errors.New("client DNS names are empty, you must provide at least one DNS name")
@@ -243,11 +244,12 @@ func (e *TLSCertificateGenerator) ensureServerCertificate(ctx context.Context, k
 	create := true
 	if err == nil {
 		create = false
-		if len(sec.Data[corev1.TLSCertKey]) != 0 || len(sec.Data[corev1.TLSPrivateKeyKey]) != 0 || len(sec.Data[SecretKeyCACert]) != 0 {
-			e.log.Info("TLS secret contains server certificate.", "secret", nn.Name)
+		if e.certificateUpToDate(sec, e.tlsServerDNSNames) {
+			e.log.Info("TLS secret contains up-to-date server certificate.", "secret", nn.Name)
 			return nil
 		}
 	}
+
 	e.log.Info("Server certificates are empty or not complete, generating a new pair...", "secret", nn.Name)
 	dnsNames := e.tlsServerDNSNames
 	if len(dnsNames) == 0 {
@@ -289,6 +291,31 @@ func (e *TLSCertificateGenerator) ensureServerCertificate(ctx context.Context, k
 		err = kube.Update(ctx, sec)
 	}
 	return errors.Wrapf(err, errFmtCannotCreateOrUpdate, nn.Name)
+}
+
+func (e *TLSCertificateGenerator) certificateUpToDate(sec *corev1.Secret, dnsNames []string) bool {
+	if len(sec.Data[corev1.TLSCertKey]) == 0 && len(sec.Data[corev1.TLSPrivateKeyKey]) == 0 && len(sec.Data[SecretKeyCACert]) == 0 {
+		// Cert has not been populated yet.
+		return false
+	}
+
+	cert, err := e.certificate.Parse(sec.Data[corev1.TLSCertKey])
+	if err != nil {
+		// Invalid certificate - we can try regenerating.
+		e.log.Debug("Failed to parse certificate for up-to-dateness check", "secret", sec.GetName(), "error", err)
+		return false
+	}
+
+	for _, name := range dnsNames {
+		if err := cert.VerifyHostname(name); err != nil {
+			// Cert is missing at least one desired DNS name; needs to be
+			// regenerated.
+			e.log.Debug("Certificate is not valid for name in up-to-dateness check", "secret", sec.GetName(), "name", name, "error", err)
+			return false
+		}
+	}
+
+	return true
 }
 
 // Run generates the TLS certificate bundle and stores it in k8s secrets,
