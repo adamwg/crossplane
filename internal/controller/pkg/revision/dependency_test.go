@@ -372,15 +372,15 @@ func TestResolve(t *testing.T) {
 							},
 							MockGetNode: func(s string) (dag.Node, error) {
 								if s == "not-here-1" {
-									return &v1beta1.LockPackage{
-										Source:  "not-here-1",
-										Version: "v0.0.1",
+									return &v1beta1.PackageNode{
+										Source:   "not-here-1",
+										Versions: []string{"v0.0.1"},
 									}, nil
 								}
 								if s == "not-here-2" {
-									return &v1beta1.LockPackage{
-										Source:  "not-here-2",
-										Version: "v0.0.1",
+									return &v1beta1.PackageNode{
+										Source:   "not-here-2",
+										Versions: []string{"v0.0.1"},
 									}, nil
 								}
 								return nil, nil
@@ -418,7 +418,7 @@ func TestResolve(t *testing.T) {
 				total:     3,
 				installed: 3,
 				invalid:   2,
-				err:       errors.Errorf(errFmtIncompatibleDependency, "existing package not-here-1@v0.0.1 is incompatible with constraint >=v0.1.0; existing package not-here-2@v0.0.1 is incompatible with constraint >=v0.1.0"),
+				err:       errors.Errorf(errFmtIncompatibleDependency, "existing package not-here-1@[v0.0.1] is incompatible with constraint >=v0.1.0; existing package not-here-2@[v0.0.1] is incompatible with constraint >=v0.1.0"),
 			},
 		},
 		"SuccessfulSelfExistValidDependencies": {
@@ -479,21 +479,21 @@ func TestResolve(t *testing.T) {
 							},
 							MockGetNode: func(s string) (dag.Node, error) {
 								if s == "not-here-1" {
-									return &v1beta1.LockPackage{
-										Source:  "not-here-1",
-										Version: "v0.20.0",
+									return &v1beta1.PackageNode{
+										Source:   "not-here-1",
+										Versions: []string{"v0.20.0"},
 									}, nil
 								}
 								if s == "not-here-2" {
-									return &v1beta1.LockPackage{
-										Source:  "not-here-2",
-										Version: "v0.100.1",
+									return &v1beta1.PackageNode{
+										Source:   "not-here-2",
+										Versions: []string{"v0.100.1"},
 									}, nil
 								}
 								if s == "function-not-here-1" {
-									return &v1beta1.LockPackage{
-										Source:  "function-not-here-1",
-										Version: "v0.1.0",
+									return &v1beta1.PackageNode{
+										Source:   "function-not-here-1",
+										Versions: []string{"v0.1.0"},
 									}, nil
 								}
 

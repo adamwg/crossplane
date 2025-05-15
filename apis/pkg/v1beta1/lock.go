@@ -26,7 +26,7 @@ import (
 
 var (
 	_ dag.Node = &Dependency{}
-	_ dag.Node = &LockPackage{}
+	_ dag.Node = &PackageNode{}
 )
 
 // A PackageType is a type of package.
@@ -72,37 +72,71 @@ type LockPackage struct {
 	ParentConstraints []string `json:"-"` // NOTE(ezgidemirel): We don't want to expose this field in the API.
 }
 
+// ToNode converts a LockPackage to a DAG node.
+func (p *LockPackage) ToNode() dag.Node {
+	return &PackageNode{
+		Source:       p.Source,
+		Versions:     []string{p.Version},
+		Dependencies: p.Dependencies,
+	}
+}
+
 // ToNodes converts LockPackages to DAG nodes.
 func ToNodes(pkgs ...LockPackage) []dag.Node {
-	nodes := make([]dag.Node, len(pkgs))
-	for i, r := range pkgs {
-		nodes[i] = &r
+	pkgNodes := make(map[string]*PackageNode, len(pkgs))
+	for _, r := range pkgs {
+		node, ok := pkgNodes[r.Source]
+		if !ok {
+			node = &PackageNode{
+				Source: r.Source,
+			}
+			pkgNodes[r.Source] = node
+		}
+
+		node.Versions = append(node.Versions, r.Version)
+		node.Dependencies = append(node.Dependencies, r.Dependencies...)
 	}
+
+	nodes := make([]dag.Node, 0, len(pkgNodes))
+	for _, n := range pkgNodes {
+		nodes = append(nodes, n)
+	}
+
 	return nodes
 }
 
+// PackageNode is a node representing a package in the dependency graph. It
+// collapses multiple lock packages with the same source into a single node with
+// multiple versions.
+type PackageNode struct {
+	Source            string
+	Versions          []string
+	ParentConstraints []string
+	Dependencies      []Dependency
+}
+
 // Identifier returns the source of a LockPackage.
-func (l *LockPackage) Identifier() string {
+func (l *PackageNode) Identifier() string {
 	return l.Source
 }
 
 // GetConstraints returns the version of a LockPackage.
-func (l *LockPackage) GetConstraints() string {
-	return l.Version
+func (l *PackageNode) GetConstraints() []string {
+	return l.Versions
 }
 
 // GetParentConstraints returns the parent constraints of a LockPackage.
-func (l *LockPackage) GetParentConstraints() []string {
+func (l *PackageNode) GetParentConstraints() []string {
 	return l.ParentConstraints
 }
 
 // AddParentConstraints appends passed constraints to the existing parent constraints.
-func (l *LockPackage) AddParentConstraints(pc []string) {
+func (l *PackageNode) AddParentConstraints(pc []string) {
 	l.ParentConstraints = append(l.ParentConstraints, pc...)
 }
 
 // Neighbors returns dependencies of a LockPackage.
-func (l *LockPackage) Neighbors() []dag.Node {
+func (l *PackageNode) Neighbors() []dag.Node {
 	nodes := make([]dag.Node, len(l.Dependencies))
 	for i, r := range l.Dependencies {
 		nodes[i] = &r
@@ -112,7 +146,7 @@ func (l *LockPackage) Neighbors() []dag.Node {
 
 // AddNeighbors adds dependencies to a LockPackage and
 // updates the parent constraints of the dependencies in the DAG.
-func (l *LockPackage) AddNeighbors(nodes ...dag.Node) error {
+func (l *PackageNode) AddNeighbors(nodes ...dag.Node) error {
 	for _, n := range nodes {
 		for _, dep := range l.Dependencies {
 			if dep.Identifier() == n.Identifier() {
@@ -157,8 +191,8 @@ func (d *Dependency) Identifier() string {
 }
 
 // GetConstraints returns a dependency's constrain.
-func (d *Dependency) GetConstraints() string {
-	return d.Constraints
+func (d *Dependency) GetConstraints() []string {
+	return []string{d.Constraints}
 }
 
 // GetParentConstraints returns a dependency's parent constraints.

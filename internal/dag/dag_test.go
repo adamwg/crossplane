@@ -54,8 +54,8 @@ func (s *simpleNode) AddNeighbors(nodes ...Node) error {
 	return nil
 }
 
-func (s *simpleNode) GetConstraints() string {
-	return ""
+func (s *simpleNode) GetConstraints() []string {
+	return nil
 }
 
 func (s *simpleNode) GetParentConstraints() []string {

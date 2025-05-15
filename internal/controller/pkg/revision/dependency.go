@@ -146,7 +146,7 @@ func (m *PackageDependencyManager) Resolve(ctx context.Context, meta pkgmetav1.P
 	// This is a corner case when source is updated but image SHA is not (i.e. relocate same image
 	// to another registry)
 	for _, lp := range lock.Packages {
-		if self.Name == lp.Name && self.Type == lp.Type && self.Source != lp.Identifier() {
+		if self.Name == lp.Name && self.Type == lp.Type && self.Source != lp.Source {
 			if err := m.RemoveSelf(ctx, pr); err != nil {
 				return found, installed, invalid, err
 			}
@@ -174,7 +174,7 @@ func (m *PackageDependencyManager) Resolve(ctx context.Context, meta pkgmetav1.P
 		}
 		// Package may exist in the graph as a dependency, or may not exist at
 		// all. We need to either convert it to a full node or add it.
-		d.AddOrUpdateNodes(&self)
+		d.AddOrUpdateNodes(self.ToNode())
 
 		// If any direct dependencies are missing we skip checking for
 		// transitive ones.
@@ -217,15 +217,21 @@ func (m *PackageDependencyManager) Resolve(ctx context.Context, meta pkgmetav1.P
 		if err != nil {
 			return found, installed, invalid, errors.New(errDependencyNotInGraph)
 		}
-		lp, ok := n.(*v1beta1.LockPackage)
+		lp, ok := n.(*v1beta1.PackageNode)
 		if !ok {
 			return found, installed, invalid, errors.New(errDependencyNotLockPackage)
 		}
 
 		// Check if the constraint is a digest, if so, compare it directly.
 		if d, err := conregv1.NewHash(dep.Constraints); err == nil {
-			if lp.Version != d.String() {
-				return found, installed, invalid, errors.Errorf("existing package %s@%s is incompatible with constraint %s", lp.Identifier(), lp.Version, strings.TrimSpace(dep.Constraints))
+			match := false
+			for _, version := range lp.Versions {
+				if version == d.String() {
+					match = true
+				}
+			}
+			if !match {
+				return found, installed, invalid, errors.Errorf("existing package %s@%v is incompatible with constraint %s", lp.Identifier(), lp.Versions, strings.TrimSpace(dep.Constraints))
 			}
 			continue
 		}
@@ -234,12 +240,18 @@ func (m *PackageDependencyManager) Resolve(ctx context.Context, meta pkgmetav1.P
 		if err != nil {
 			return found, installed, invalid, err
 		}
-		v, err := semver.NewVersion(lp.Version)
-		if err != nil {
-			return found, installed, invalid, err
+		met := false
+		for _, version := range lp.Versions {
+			v, err := semver.NewVersion(version)
+			if err != nil {
+				return found, installed, invalid, err
+			}
+			if c.Check(v) {
+				met = true
+			}
 		}
-		if !c.Check(v) {
-			s := fmt.Sprintf("existing package %s@%s", lp.Identifier(), lp.Version)
+		if !met {
+			s := fmt.Sprintf("existing package %s@%v", lp.Identifier(), lp.Versions)
 			if dep.Constraints != "" {
 				s = fmt.Sprintf("%s is incompatible with constraint %s", s, strings.TrimSpace(dep.Constraints))
 			}

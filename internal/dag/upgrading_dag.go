@@ -228,23 +228,35 @@ func (d *MapUpgradingDag) visit(name string, neighbors []Node, stack map[string]
 }
 
 func isValidConstraints(installed, wanted Node) bool {
-	// NOTE(ezgidemirel): This condition also satisfies digests
-	if installed.GetConstraints() == wanted.GetConstraints() {
-		return true
-	}
+	// Check that each wanted constraint is met by at least one installed
+	// constraint.
+	for _, wc := range wanted.GetConstraints() {
+		met := false
+		for _, ic := range installed.GetConstraints() {
+			// NOTE(ezgidemirel): This condition also satisfies digests.
+			if ic == wc {
+				met = true
+				break
+			}
 
-	c, err := semver.NewConstraint(wanted.GetConstraints())
-	if err != nil {
-		return false
-	}
+			c, err := semver.NewConstraint(wc)
+			if err != nil {
+				return false
+			}
 
-	v, err := semver.NewVersion(installed.GetConstraints())
-	if err != nil {
-		return false
-	}
+			v, err := semver.NewVersion(ic)
+			if err != nil {
+				return false
+			}
 
-	if !c.Check(v) {
-		return false
+			if c.Check(v) {
+				met = true
+				break
+			}
+		}
+		if !met {
+			return false
+		}
 	}
 
 	return true

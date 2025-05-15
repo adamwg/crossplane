@@ -64,8 +64,8 @@ func (s *SimpleFuzzNode) Neighbors() []Node {
 	return nodes
 }
 
-func (s *SimpleFuzzNode) GetConstraints() string {
-	return ""
+func (s *SimpleFuzzNode) GetConstraints() []string {
+	return nil
 }
 
 func (s *SimpleFuzzNode) GetParentConstraints() []string {
