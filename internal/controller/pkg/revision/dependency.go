@@ -103,6 +103,7 @@ func (m *PackageDependencyManager) Resolve(ctx context.Context, meta pkgmetav1.P
 			return 0, 0, 0, errors.Errorf("encountered an invalid dependency: package dependencies must specify either a valid type, or an explicit apiVersion, kind, and package")
 		}
 		pdep.Constraints = dep.Version
+		pdep.ActiveRevisionLimit = dep.ActiveRevisionLimit
 		sources[i] = pdep
 	}
 

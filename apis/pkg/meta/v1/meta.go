@@ -67,4 +67,11 @@ type Dependency struct {
 
 	// Version is the semantic version constraints of the dependency image.
 	Version string `json:"version"`
+
+	// ActiveRevisionLimit is the active revision limit for the package that
+	// will be installed to resolve this dependency. Defaults to 1. Can be
+	// greater than 1 only for Function dependencies.
+	// +optional
+	// +kubebuilder:default=1
+	ActiveRevisionLimit *int64 `json:"activeRevisionLimit,omitempty"`
 }

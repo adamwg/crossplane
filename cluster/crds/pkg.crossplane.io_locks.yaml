@@ -55,6 +55,12 @@ spec:
                     description: A Dependency is a dependency of a package in the
                       lock.
                     properties:
+                      activeRevisionLimit:
+                        description: |-
+                          ActiveRevisionLimit is the active revision limit to apply when installing
+                          a package to satisfy the dependency.
+                        format: int64
+                        type: integer
                       apiVersion:
                         description: APIVersion of the package.
                         type: string

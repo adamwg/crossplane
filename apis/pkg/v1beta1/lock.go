@@ -149,6 +149,10 @@ type Dependency struct {
 
 	// ParentConstraints is a list of constraints that are passed down from the parent package to the dependency.
 	ParentConstraints []string `json:"-"` // NOTE(ezgidemirel): We don't want to expose this field in the API.
+
+	// ActiveRevisionLimit is the active revision limit to apply when installing
+	// a package to satisfy the dependency.
+	ActiveRevisionLimit *int64 `json:"activeRevisionLimit,omitempty"`
 }
 
 // Identifier returns a dependency's source.

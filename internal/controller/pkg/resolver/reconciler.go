@@ -654,6 +654,12 @@ func NewPackage(dep *v1beta1.Dependency, version string, ref name.Reference) (*u
 		return nil, errors.Errorf("encountered an invalid dependency: package dependencies must specify either a valid type, or an explicit apiVersion, kind, and package")
 	}
 
+	if dep.ActiveRevisionLimit != nil {
+		// revisionHistoryLimit must be >= activeRevisionLimit.
+		_ = fieldpath.Pave(pack.Object).SetValue("spec.revisionHistoryLimit", *dep.ActiveRevisionLimit)
+		_ = fieldpath.Pave(pack.Object).SetValue("spec.activeRevisionLimit", *dep.ActiveRevisionLimit)
+	}
+
 	return pack, nil
 }
 

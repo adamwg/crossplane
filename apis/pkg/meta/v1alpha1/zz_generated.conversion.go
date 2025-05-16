@@ -104,6 +104,12 @@ func (c *GeneratedFromHubConverter) v1DependencyToV1alpha1Dependency(source v1.D
 	}
 	v1alpha1Dependency.Function = pString6
 	v1alpha1Dependency.Version = source.Version
+	var pInt64 *int64
+	if source.ActiveRevisionLimit != nil {
+		xint64 := *source.ActiveRevisionLimit
+		pInt64 = &xint64
+	}
+	v1alpha1Dependency.ActiveRevisionLimit = pInt64
 	return v1alpha1Dependency
 }
 func (c *GeneratedFromHubConverter) v1MetaSpecToV1alpha1MetaSpec(source v1.MetaSpec) MetaSpec {
@@ -321,6 +327,12 @@ func (c *GeneratedToHubConverter) v1alpha1DependencyToV1Dependency(source Depend
 	}
 	v1Dependency.Function = pString6
 	v1Dependency.Version = source.Version
+	var pInt64 *int64
+	if source.ActiveRevisionLimit != nil {
+		xint64 := *source.ActiveRevisionLimit
+		pInt64 = &xint64
+	}
+	v1Dependency.ActiveRevisionLimit = pInt64
 	return v1Dependency
 }
 func (c *GeneratedToHubConverter) v1alpha1MetaSpecToV1MetaSpec(source MetaSpec) v1.MetaSpec {

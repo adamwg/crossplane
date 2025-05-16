@@ -61,6 +61,14 @@ spec:
                     create the dependency and set its spec.package field to a package OCI
                     reference.
                   properties:
+                    activeRevisionLimit:
+                      default: 1
+                      description: |-
+                        ActiveRevisionLimit is the active revision limit for the package that
+                        will be installed to resolve this dependency. Defaults to 1. Can be
+                        greater than 1 only for Function dependencies.
+                      format: int64
+                      type: integer
                     apiVersion:
                       description: APIVersion of the dependency.
                       type: string
@@ -148,6 +156,14 @@ spec:
                     create the dependency and set its spec.package field to a package OCI
                     reference.
                   properties:
+                    activeRevisionLimit:
+                      default: 1
+                      description: |-
+                        ActiveRevisionLimit is the active revision limit for the package that
+                        will be installed to resolve this dependency. Defaults to 1. Can be
+                        greater than 1 only for Function dependencies.
+                      format: int64
+                      type: integer
                     apiVersion:
                       description: APIVersion of the dependency.
                       type: string
