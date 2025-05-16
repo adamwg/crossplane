@@ -136,7 +136,8 @@ func TestResolve(t *testing.T) {
 				meta: &pkgmetav1.Configuration{},
 				pr: &v1.ConfigurationRevision{
 					Spec: v1.PackageRevisionSpec{
-						Package: "xpkg.crossplane.io/hasheddan/config-nop-a:v0.0.1",
+						Package:      "xpkg.crossplane.io/hasheddan/config-nop-a:v0.0.1",
+						DesiredState: v1.PackageRevisionActive,
 					},
 				},
 			},
