@@ -133,20 +133,20 @@ func NewRuntimeFunctionRunner(ctx context.Context, log logging.Logger, fns []pkg
 			return nil, errors.Wrapf(err, "cannot dial Function %q at address %q", fn.GetName(), rctx.Target)
 		}
 
-		conns[fn.GetName()] = conn
+		conns[fn.Spec.Package] = conn
 	}
 
 	return &RuntimeFunctionRunner{contexts: contexts, conns: conns}, nil
 }
 
-// RunFunction runs the named function.
-func (r *RuntimeFunctionRunner) RunFunction(ctx context.Context, name string, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error) {
+// RunFunction runs the function with the given package reference.
+func (r *RuntimeFunctionRunner) RunFunction(ctx context.Context, pkg string, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error) {
 	r.mx.Lock()
 	defer r.mx.Unlock()
 
-	conn, ok := r.conns[name]
+	conn, ok := r.conns[pkg]
 	if !ok {
-		return nil, errors.Errorf("unknown Function %q - does it exist in your Functions file?", name)
+		return nil, errors.Errorf("unknown Function package %q - does it exist in your Functions file?", pkg)
 	}
 
 	return xfn.NewBetaFallBackFunctionRunnerServiceClient(conn).RunFunction(ctx, req)
@@ -299,7 +299,18 @@ func Render(ctx context.Context, log logging.Logger, in Inputs) (Outputs, error)
 			}
 		}
 
-		rsp, err := runner.RunFunction(ctx, fn.FunctionRef.Name, req)
+		var pkg string
+		for _, fpkg := range in.Functions {
+			if fpkg.Name == fn.FunctionRef.Name {
+				pkg = fpkg.Spec.Package
+				break
+			}
+		}
+		if pkg == "" {
+			return Outputs{}, errors.Errorf("cannot resolve package for function %q in pipeline step %q", fn.FunctionRef.Name, fn.Step)
+		}
+
+		rsp, err := runner.RunFunction(ctx, pkg, req)
 		if err != nil {
 			return Outputs{}, errors.Wrapf(err, "cannot run pipeline step %q", fn.Step)
 		}

@@ -42,6 +42,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/test"
 
 	"github.com/crossplane/crossplane/v2/apis/ops/v1alpha1"
+	pkgv1 "github.com/crossplane/crossplane/v2/apis/pkg/v1"
 	"github.com/crossplane/crossplane/v2/internal/xfn"
 	fnv1 "github.com/crossplane/crossplane/v2/proto/fn/v1"
 )
@@ -186,6 +187,17 @@ func TestReconcile(t *testing.T) {
 								return errors.New("boom")
 							}
 
+							if f, ok := obj.(*pkgv1.Function); ok {
+								*f = pkgv1.Function{
+									Spec: pkgv1.FunctionSpec{
+										PackageSpec: pkgv1.PackageSpec{
+											Package: "xpkg.upbound.io/crossplane-contrib/function-cool:v1.0.0",
+										},
+									},
+								}
+								return nil
+							}
+
 							op := &v1alpha1.Operation{
 								Spec: v1alpha1.OperationSpec{
 									Pipeline: []v1alpha1.PipelineStep{
@@ -236,6 +248,17 @@ func TestReconcile(t *testing.T) {
 								return errors.New("boom")
 							}
 
+							if f, ok := obj.(*pkgv1.Function); ok {
+								*f = pkgv1.Function{
+									Spec: pkgv1.FunctionSpec{
+										PackageSpec: pkgv1.PackageSpec{
+											Package: "xpkg.upbound.io/crossplane-contrib/function-cool:v1.0.0",
+										},
+									},
+								}
+								return nil
+							}
+
 							op := &v1alpha1.Operation{
 								Spec: v1alpha1.OperationSpec{
 									Pipeline: []v1alpha1.PipelineStep{
@@ -277,6 +300,17 @@ func TestReconcile(t *testing.T) {
 						MockGet: test.NewMockGetFn(nil, func(obj client.Object) error {
 							if _, ok := obj.(*corev1.Secret); ok {
 								return errors.New("boom")
+							}
+
+							if f, ok := obj.(*pkgv1.Function); ok {
+								*f = pkgv1.Function{
+									Spec: pkgv1.FunctionSpec{
+										PackageSpec: pkgv1.PackageSpec{
+											Package: "xpkg.upbound.io/crossplane-contrib/function-cool:v1.0.0",
+										},
+									},
+								}
+								return nil
 							}
 
 							op := &v1alpha1.Operation{
@@ -328,6 +362,17 @@ func TestReconcile(t *testing.T) {
 						MockGet: test.NewMockGetFn(nil, func(obj client.Object) error {
 							if _, ok := obj.(*corev1.Secret); ok {
 								return errors.New("boom")
+							}
+
+							if f, ok := obj.(*pkgv1.Function); ok {
+								*f = pkgv1.Function{
+									Spec: pkgv1.FunctionSpec{
+										PackageSpec: pkgv1.PackageSpec{
+											Package: "xpkg.upbound.io/crossplane-contrib/function-cool:v1.0.0",
+										},
+									},
+								}
+								return nil
 							}
 
 							op := &v1alpha1.Operation{
@@ -475,6 +520,17 @@ func TestReconcile(t *testing.T) {
 						MockGet: test.NewMockGetFn(nil, func(obj client.Object) error {
 							if _, ok := obj.(*corev1.Secret); ok {
 								return errors.New("boom")
+							}
+
+							if f, ok := obj.(*pkgv1.Function); ok {
+								*f = pkgv1.Function{
+									Spec: pkgv1.FunctionSpec{
+										PackageSpec: pkgv1.PackageSpec{
+											Package: "xpkg.upbound.io/crossplane-contrib/function-cool:v1.0.0",
+										},
+									},
+								}
+								return nil
 							}
 
 							op := &v1alpha1.Operation{

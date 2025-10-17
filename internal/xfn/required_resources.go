@@ -64,7 +64,7 @@ func NewFetchingFunctionRunner(r FunctionRunner, f RequiredResourcesFetcher) *Fe
 
 // RunFunction runs a function, repeatedly fetching any required resources it asks
 // for. The function may be run up to MaxRequirementsIterations times.
-func (c *FetchingFunctionRunner) RunFunction(ctx context.Context, name string, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error) {
+func (c *FetchingFunctionRunner) RunFunction(ctx context.Context, pkg string, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error) {
 	// Used to store the requirements returned at the previous iteration.
 	var requirements *fnv1.Requirements
 
@@ -72,7 +72,7 @@ func (c *FetchingFunctionRunner) RunFunction(ctx context.Context, name string, r
 	bootstrap := maps.Clone(req.GetRequiredResources())
 
 	for i := int64(0); i <= MaxRequirementsIterations; i++ {
-		rsp, err := c.wrapped.RunFunction(ctx, name, req)
+		rsp, err := c.wrapped.RunFunction(ctx, pkg, req)
 		if err != nil {
 			// I can't think of any useful info to wrap this error with.
 			return nil, err

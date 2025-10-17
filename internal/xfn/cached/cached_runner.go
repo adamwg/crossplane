@@ -76,8 +76,8 @@ type Metrics interface { //nolint:interfacebloat // Only a little bit bloated. :
 
 // A FunctionRunner runs a composition function.
 type FunctionRunner interface {
-	// RunFunction runs the named composition function.
-	RunFunction(ctx context.Context, name string, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error)
+	// RunFunction runs the composition function with the given package reference.
+	RunFunction(ctx context.Context, pkg string, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error)
 }
 
 // A FileBackedRunner wraps another function runner. It caches responses
@@ -147,45 +147,45 @@ func NewFileBackedRunner(wrap FunctionRunner, path string, o ...FileBackedRunner
 
 // RunFunction tries to return a response from cache. It falls back to calling
 // the wrapped runner.
-func (r *FileBackedRunner) RunFunction(ctx context.Context, name string, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error) {
+func (r *FileBackedRunner) RunFunction(ctx context.Context, pkg string, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error) {
 	start := time.Now()
-	log := r.log.WithValues("name", name)
+	log := r.log.WithValues("package", pkg)
 
 	// If we don't have a cache key we can't perform a cache lookup, or
 	// cache the response. Just send it on. This should never happen.
 	if req.GetMeta().GetTag() == "" {
 		log.Debug("RunFunctionResponse cache miss", "reason", ReasonEmptyRequestTag)
-		r.metrics.Miss(name)
+		r.metrics.Miss(pkg)
 
-		return r.wrapped.RunFunction(ctx, name, req)
+		return r.wrapped.RunFunction(ctx, pkg, req)
 	}
 
-	key := filepath.Join(name, req.GetMeta().GetTag())
+	key := filepath.Join(pkg, req.GetMeta().GetTag())
 	log = log.WithValues("cache-key", key)
 
 	b, err := r.fs.ReadFile(key)
 	if errors.Is(err, fs.ErrNotExist) {
 		log.Debug("RunFunctionResponse cache miss", "reason", ReasonNotCached)
-		r.metrics.Miss(name)
+		r.metrics.Miss(pkg)
 
-		return r.CacheFunction(ctx, name, req)
+		return r.CacheFunction(ctx, pkg, req)
 	}
 
 	if err != nil {
 		log.Info("RunFunctionResponse cache miss", "reason", ReasonError, "err", err)
-		r.metrics.Miss(name)
-		r.metrics.Error(name)
+		r.metrics.Miss(pkg)
+		r.metrics.Error(pkg)
 
-		return r.CacheFunction(ctx, name, req)
+		return r.CacheFunction(ctx, pkg, req)
 	}
 
 	crsp := &v1alpha1.CachedRunFunctionResponse{}
 	if err := proto.Unmarshal(b, crsp); err != nil {
 		log.Info("RunFunctionResponse cache miss", "reason", ReasonError, "err", err)
-		r.metrics.Miss(name)
-		r.metrics.Error(name)
+		r.metrics.Miss(pkg)
+		r.metrics.Error(pkg)
 
-		return r.CacheFunction(ctx, name, req)
+		return r.CacheFunction(ctx, pkg, req)
 	}
 
 	deadline := crsp.GetDeadline().AsTime()
@@ -194,30 +194,30 @@ func (r *FileBackedRunner) RunFunction(ctx context.Context, name string, req *fn
 	// deadline isn't set - e.g. because we unmarshaled an empty file.
 	if time.Now().After(deadline) {
 		log.Debug("RunFunctionResponse cache miss", "reason", ReasonDeadlineExpired, "deadline", deadline)
-		r.metrics.Miss(name)
+		r.metrics.Miss(pkg)
 
-		return r.CacheFunction(ctx, name, req)
+		return r.CacheFunction(ctx, pkg, req)
 	}
 
 	log.Debug("RunFunctionResponse cache hit")
-	r.metrics.Hit(name)
-	r.metrics.ReadDuration(name, time.Since(start))
+	r.metrics.Hit(pkg)
+	r.metrics.ReadDuration(pkg, time.Since(start))
 
 	return crsp.GetResponse(), nil
 }
 
 // CacheFunction runs a function and caches its response if the TTL is non-zero.
-func (r *FileBackedRunner) CacheFunction(ctx context.Context, name string, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error) {
+func (r *FileBackedRunner) CacheFunction(ctx context.Context, pkg string, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error) {
 	// If we don't have a cache key we can't cache the response. Just send
 	// it on. This should never happen.
 	if req.GetMeta().GetTag() == "" {
-		return r.wrapped.RunFunction(ctx, name, req)
+		return r.wrapped.RunFunction(ctx, pkg, req)
 	}
 
-	key := filepath.Join(name, req.GetMeta().GetTag())
-	log := r.log.WithValues("name", name, "cache-key", key)
+	key := filepath.Join(pkg, req.GetMeta().GetTag())
+	log := r.log.WithValues("package", pkg, "cache-key", key)
 
-	rsp, err := r.wrapped.RunFunction(ctx, name, req)
+	rsp, err := r.wrapped.RunFunction(ctx, pkg, req)
 	if err != nil {
 		return rsp, err
 	}
@@ -245,24 +245,24 @@ func (r *FileBackedRunner) CacheFunction(ctx context.Context, name string, req *
 	msg, err := proto.Marshal(&v1alpha1.CachedRunFunctionResponse{Deadline: timestamppb.New(deadline), Response: rsp})
 	if err != nil {
 		log.Info("RunFunctionResponse cache write error", "err", err)
-		r.metrics.Error(name)
+		r.metrics.Error(pkg)
 
 		return rsp, nil
 	}
 
-	if err := r.fs.MkdirAll(name, 0o700); err != nil {
+	if err := r.fs.MkdirAll(pkg, 0o700); err != nil {
 		log.Info("RunFunctionResponse cache write error", "err", err)
-		r.metrics.Error(name)
+		r.metrics.Error(pkg)
 
 		return rsp, nil
 	}
 
 	// Write and rename a temp file to make our write 'atomic'. This ensure
 	// we won't overwrite a cache file that we're currently reading.
-	tmp, err := r.fs.TempFile(name, "")
+	tmp, err := r.fs.TempFile(pkg, "")
 	if err != nil {
 		log.Info("RunFunctionResponse cache write error", "err", err)
-		r.metrics.Error(name)
+		r.metrics.Error(pkg)
 
 		return rsp, nil
 	}
@@ -271,29 +271,29 @@ func (r *FileBackedRunner) CacheFunction(ctx context.Context, name string, req *
 		_ = tmp.Close()
 
 		log.Info("RunFunctionResponse cache write error", "err", err)
-		r.metrics.Error(name)
+		r.metrics.Error(pkg)
 
 		return rsp, nil
 	}
 
 	if err := tmp.Close(); err != nil {
 		log.Info("RunFunctionResponse cache write error", "err", err)
-		r.metrics.Error(name)
+		r.metrics.Error(pkg)
 
 		return rsp, nil
 	}
 
 	if err := r.fs.Rename(tmp.Name(), key); err != nil {
 		log.Info("RunFunctionResponse cache write error", "err", err)
-		r.metrics.Error(name)
+		r.metrics.Error(pkg)
 
 		return rsp, nil
 	}
 
 	log.Debug("RunFunctionResponse cache write", "deadline", deadline, "bytes", len(msg))
-	r.metrics.Write(name)
-	r.metrics.WriteDuration(name, time.Since(start))
-	r.metrics.WroteBytes(name, len(msg))
+	r.metrics.Write(pkg)
+	r.metrics.WriteDuration(pkg, time.Since(start))
+	r.metrics.WroteBytes(pkg, len(msg))
 
 	return rsp, nil
 }
@@ -359,15 +359,15 @@ func (r *FileBackedRunner) GarbageCollectFilesNow(ctx context.Context) (int, err
 			return nil
 		}
 
-		// The cache layout is like /cache/function-name/request-hash,
-		// so the directory name is our function name.
-		name := filepath.Base(filepath.Dir(path))
-		log := r.log.WithValues("name", name, "cache-key", path)
+		// The cache layout is like /cache/package/request-hash,
+		// so the directory name is our package.
+		pkg := filepath.Base(filepath.Dir(path))
+		log := r.log.WithValues("package", pkg, "cache-key", path)
 
 		b, err := r.fs.ReadFile(path)
 		if err != nil {
 			log.Info("RunFunctionResponse cache error", "error", err)
-			r.metrics.Error(name)
+			r.metrics.Error(pkg)
 
 			return nil
 		}
@@ -375,7 +375,7 @@ func (r *FileBackedRunner) GarbageCollectFilesNow(ctx context.Context) (int, err
 		crsp := &v1alpha1.CachedRunFunctionResponse{}
 		if err := proto.Unmarshal(b, crsp); err != nil {
 			log.Info("RunFunctionResponse cache error", "error", err)
-			r.metrics.Error(name)
+			r.metrics.Error(pkg)
 
 			return nil
 		}
@@ -390,7 +390,7 @@ func (r *FileBackedRunner) GarbageCollectFilesNow(ctx context.Context) (int, err
 		info, err := d.Info()
 		if err != nil {
 			log.Info("RunFunctionResponse cache error", "error", err)
-			r.metrics.Error(name)
+			r.metrics.Error(pkg)
 		}
 
 		// There's a race here. It's possible CacheFunction will write a
@@ -402,7 +402,7 @@ func (r *FileBackedRunner) GarbageCollectFilesNow(ctx context.Context) (int, err
 		// actually be deleted until ReadFile closes the fd.
 		if err := r.fs.Remove(path); err != nil {
 			log.Info("RunFunctionResponse cache error", "error", err)
-			r.metrics.Error(name)
+			r.metrics.Error(pkg)
 
 			return nil
 		}
@@ -410,8 +410,8 @@ func (r *FileBackedRunner) GarbageCollectFilesNow(ctx context.Context) (int, err
 		collected++
 
 		log.Debug("RunFunctionResponse cache delete", "deadline", deadline, "bytes", info.Size())
-		r.metrics.Delete(name)
-		r.metrics.DeletedBytes(name, int(info.Size()))
+		r.metrics.Delete(pkg)
+		r.metrics.DeletedBytes(pkg, int(info.Size()))
 
 		return nil
 	})

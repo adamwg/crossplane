@@ -147,7 +147,19 @@ func Render(ctx context.Context, log logging.Logger, in Inputs) (Outputs, error)
 
 		req.Meta = &fnv1.RequestMeta{Tag: xfn.Tag(req)}
 
-		rsp, err := runner.RunFunction(ctx, fn.FunctionRef.Name, req)
+		// Resolve the package reference from the Functions list
+		var pkg string
+		for _, f := range in.Functions {
+			if f.GetName() == fn.FunctionRef.Name {
+				pkg = f.Spec.Package
+				break
+			}
+		}
+		if pkg == "" {
+			return Outputs{}, errors.Errorf("unknown function %q - does it exist in your Functions file?", fn.FunctionRef.Name)
+		}
+
+		rsp, err := runner.RunFunction(ctx, pkg, req)
 		if err != nil {
 			return Outputs{}, errors.Wrapf(err, "cannot run operation pipeline step %q", fn.Step)
 		}
