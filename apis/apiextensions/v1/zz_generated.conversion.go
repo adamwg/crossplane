@@ -108,6 +108,7 @@ func (c *GeneratedRevisionSpecConverter) v1FunctionCredentialsToV1FunctionCreden
 func (c *GeneratedRevisionSpecConverter) v1FunctionReferenceToV1FunctionReference(source FunctionReference) FunctionReference {
 	var v1FunctionReference FunctionReference
 	v1FunctionReference.Name = source.Name
+	v1FunctionReference.Package = source.Package
 	return v1FunctionReference
 }
 func (c *GeneratedRevisionSpecConverter) v1PipelineStepToV1PipelineStep(source PipelineStep) PipelineStep {
