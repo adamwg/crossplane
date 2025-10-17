@@ -42,6 +42,7 @@ import (
 
 	"github.com/crossplane/crossplane/v2/apis/ops/v1alpha1"
 	pkgmetav1 "github.com/crossplane/crossplane/v2/apis/pkg/meta/v1"
+	pkgv1 "github.com/crossplane/crossplane/v2/apis/pkg/v1"
 	"github.com/crossplane/crossplane/v2/internal/xfn"
 	fnv1 "github.com/crossplane/crossplane/v2/proto/fn/v1"
 )
@@ -249,7 +250,22 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 
 		req.Meta = &fnv1.RequestMeta{Tag: xfn.Tag(req)}
 
-		rsp, err := r.pipeline.RunFunction(ctx, fn.FunctionRef.Name, req)
+		// Resolve the package reference from the Function resource
+		f := &pkgv1.Function{}
+		if err := r.client.Get(ctx, client.ObjectKey{Name: fn.FunctionRef.Name}, f); err != nil {
+			op.Status.Failures++
+
+			log.Debug("Cannot get Function resource", "error", err, "failures", op.Status.Failures)
+			err = errors.Wrapf(err, "failed to get Function resource %q for pipeline step %q", fn.FunctionRef.Name, fn.Step)
+			r.record.Event(op, event.Warning(reasonFunctionInvocation, err))
+			status.MarkConditions(xpv1.ReconcileError(err))
+
+			_ = r.client.Status().Update(ctx, op)
+
+			return reconcile.Result{}, err
+		}
+
+		rsp, err := r.pipeline.RunFunction(ctx, f.Spec.Package, req)
 		if err != nil {
 			op.Status.Failures++
 

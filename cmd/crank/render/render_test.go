@@ -175,6 +175,11 @@ func TestRender(t *testing.T) {
 										AnnotationKeyRuntimeDevelopmentTarget: lis.Addr().String(),
 									},
 								},
+								Spec: pkgv1.FunctionSpec{
+									PackageSpec: pkgv1.PackageSpec{
+										Package: "xpkg.crossplane.io/crossplane-contrib/function-test:v0.1.0",
+									},
+								},
 							}
 						}(),
 					},
@@ -231,6 +236,11 @@ func TestRender(t *testing.T) {
 									Annotations: map[string]string{
 										AnnotationKeyRuntime:                  string(AnnotationValueRuntimeDevelopment),
 										AnnotationKeyRuntimeDevelopmentTarget: lis.Addr().String(),
+									},
+								},
+								Spec: pkgv1.FunctionSpec{
+									PackageSpec: pkgv1.PackageSpec{
+										Package: "xpkg.crossplane.io/crossplane-contrib/function-test:v0.1.0",
 									},
 								},
 							}
@@ -351,6 +361,11 @@ func TestRender(t *testing.T) {
 									Annotations: map[string]string{
 										AnnotationKeyRuntime:                  string(AnnotationValueRuntimeDevelopment),
 										AnnotationKeyRuntimeDevelopmentTarget: lis.Addr().String(),
+									},
+								},
+								Spec: pkgv1.FunctionSpec{
+									PackageSpec: pkgv1.PackageSpec{
+										Package: "xpkg.crossplane.io/crossplane-contrib/function-test:v0.1.0",
 									},
 								},
 							}
@@ -554,6 +569,11 @@ func TestRender(t *testing.T) {
 									Annotations: map[string]string{
 										AnnotationKeyRuntime:                  string(AnnotationValueRuntimeDevelopment),
 										AnnotationKeyRuntimeDevelopmentTarget: lis.Addr().String(),
+									},
+								},
+								Spec: pkgv1.FunctionSpec{
+									PackageSpec: pkgv1.PackageSpec{
+										Package: "xpkg.crossplane.io/crossplane-contrib/function-test:v0.1.0",
 									},
 								},
 							}
@@ -772,6 +792,11 @@ func TestRender(t *testing.T) {
 										AnnotationKeyRuntimeDevelopmentTarget: lis.Addr().String(),
 									},
 								},
+								Spec: pkgv1.FunctionSpec{
+									PackageSpec: pkgv1.PackageSpec{
+										Package: "xpkg.crossplane.io/crossplane-contrib/function-test:v0.1.0",
+									},
+								},
 							}
 						}(),
 					},
@@ -964,6 +989,11 @@ func TestRender(t *testing.T) {
 										AnnotationKeyRuntimeDevelopmentTarget: lis.Addr().String(),
 									},
 								},
+								Spec: pkgv1.FunctionSpec{
+									PackageSpec: pkgv1.PackageSpec{
+										Package: "xpkg.crossplane.io/crossplane-contrib/function-test:v0.1.0",
+									},
+								},
 							}
 						}(),
 					},
@@ -1115,6 +1145,11 @@ func TestRender(t *testing.T) {
 										AnnotationKeyRuntimeDevelopmentTarget: lis.Addr().String(),
 									},
 								},
+								Spec: pkgv1.FunctionSpec{
+									PackageSpec: pkgv1.PackageSpec{
+										Package: "xpkg.crossplane.io/crossplane-contrib/function-test:v0.1.0",
+									},
+								},
 							}
 						}(),
 					},
@@ -1238,6 +1273,11 @@ func TestRender(t *testing.T) {
 										AnnotationKeyRuntimeDevelopmentTarget: lis.Addr().String(),
 									},
 								},
+								Spec: pkgv1.FunctionSpec{
+									PackageSpec: pkgv1.PackageSpec{
+										Package: "xpkg.crossplane.io/crossplane-contrib/function-test:v0.1.0",
+									},
+								},
 							}
 						}(),
 					},
@@ -1359,6 +1399,11 @@ func TestRender(t *testing.T) {
 									Annotations: map[string]string{
 										AnnotationKeyRuntime:                  string(AnnotationValueRuntimeDevelopment),
 										AnnotationKeyRuntimeDevelopmentTarget: lis.Addr().String(),
+									},
+								},
+								Spec: pkgv1.FunctionSpec{
+									PackageSpec: pkgv1.PackageSpec{
+										Package: "xpkg.crossplane.io/crossplane-contrib/function-test:v0.1.0",
 									},
 								},
 							}
@@ -1485,6 +1530,11 @@ func TestRender(t *testing.T) {
 										AnnotationKeyRuntimeDevelopmentTarget: lis.Addr().String(),
 									},
 								},
+								Spec: pkgv1.FunctionSpec{
+									PackageSpec: pkgv1.PackageSpec{
+										Package: "xpkg.crossplane.io/crossplane-contrib/function-test:v0.1.0",
+									},
+								},
 							}
 						}(),
 					},
@@ -1606,6 +1656,11 @@ func TestRender(t *testing.T) {
 									Annotations: map[string]string{
 										AnnotationKeyRuntime:                  string(AnnotationValueRuntimeDevelopment),
 										AnnotationKeyRuntimeDevelopmentTarget: lis.Addr().String(),
+									},
+								},
+								Spec: pkgv1.FunctionSpec{
+									PackageSpec: pkgv1.PackageSpec{
+										Package: "xpkg.crossplane.io/crossplane-contrib/function-test:v0.1.0",
 									},
 								},
 							}

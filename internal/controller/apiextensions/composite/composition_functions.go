@@ -43,6 +43,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/resource/unstructured/composite"
 
 	v1 "github.com/crossplane/crossplane/v2/apis/apiextensions/v1"
+	pkgv1 "github.com/crossplane/crossplane/v2/apis/pkg/v1"
 	"github.com/crossplane/crossplane/v2/internal/names"
 	"github.com/crossplane/crossplane/v2/internal/xcrd"
 	"github.com/crossplane/crossplane/v2/internal/xerrors"
@@ -120,16 +121,16 @@ type xr struct {
 
 // A FunctionRunner runs a single Composition Function.
 type FunctionRunner interface {
-	// RunFunction runs the named Composition Function.
-	RunFunction(ctx context.Context, name string, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error)
+	// RunFunction runs the Composition Function with the given package reference.
+	RunFunction(ctx context.Context, pkg string, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error)
 }
 
 // A FunctionRunnerFn is a function that can run a Composition Function.
-type FunctionRunnerFn func(ctx context.Context, name string, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error)
+type FunctionRunnerFn func(ctx context.Context, pkg string, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error)
 
-// RunFunction runs the named Composition Function with the supplied request.
-func (fn FunctionRunnerFn) RunFunction(ctx context.Context, name string, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error) {
-	return fn(ctx, name, req)
+// RunFunction runs the Composition Function with the supplied package reference and request.
+func (fn FunctionRunnerFn) RunFunction(ctx context.Context, pkg string, req *fnv1.RunFunctionRequest) (*fnv1.RunFunctionResponse, error) {
+	return fn(ctx, pkg, req)
 }
 
 // A ConnectionSecretOwner is a resource with a connection secret.
@@ -347,7 +348,13 @@ func (c *FunctionComposer) Compose(ctx context.Context, xr *composite.Unstructur
 
 		req.Meta = &fnv1.RequestMeta{Tag: Tag(req)}
 
-		rsp, err := c.pipeline.RunFunction(ctx, fn.FunctionRef.Name, req)
+		// Resolve the package reference from the Function resource
+		f := &pkgv1.Function{}
+		if err := c.client.Get(ctx, client.ObjectKey{Name: fn.FunctionRef.Name}, f); err != nil {
+			return CompositionResult{}, errors.Wrapf(err, errFmtRunPipelineStep, fn.Step)
+		}
+
+		rsp, err := c.pipeline.RunFunction(ctx, f.Spec.Package, req)
 		if err != nil {
 			return CompositionResult{}, errors.Wrapf(err, errFmtRunPipelineStep, fn.Step)
 		}

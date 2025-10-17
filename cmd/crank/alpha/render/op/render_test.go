@@ -161,6 +161,11 @@ func TestRender(t *testing.T) {
 							ObjectMeta: metav1.ObjectMeta{
 								Name: "function-test",
 							},
+							Spec: pkgv1.FunctionSpec{
+								PackageSpec: pkgv1.PackageSpec{
+									Package: "xpkg.crossplane.io/crossplane-contrib/function-test:latest",
+								},
+							},
 						},
 					},
 					FunctionCredentials: []corev1.Secret{},
@@ -256,6 +261,11 @@ func TestRender(t *testing.T) {
 										render.AnnotationKeyRuntimeDevelopmentTarget: lis.Addr().String(),
 									},
 								},
+								Spec: pkgv1.FunctionSpec{
+									PackageSpec: pkgv1.PackageSpec{
+										Package: "xpkg.crossplane.io/crossplane-contrib/function-fatal:latest",
+									},
+								},
 							}
 						}(),
 					},
@@ -324,6 +334,11 @@ func TestRender(t *testing.T) {
 									Annotations: map[string]string{
 										render.AnnotationKeyRuntime:                  string(render.AnnotationValueRuntimeDevelopment),
 										render.AnnotationKeyRuntimeDevelopmentTarget: lis.Addr().String(),
+									},
+								},
+								Spec: pkgv1.FunctionSpec{
+									PackageSpec: pkgv1.PackageSpec{
+										Package: "xpkg.crossplane.io/crossplane-contrib/function-test:latest",
 									},
 								},
 							}
