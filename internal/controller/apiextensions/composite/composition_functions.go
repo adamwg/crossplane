@@ -348,13 +348,17 @@ func (c *FunctionComposer) Compose(ctx context.Context, xr *composite.Unstructur
 
 		req.Meta = &fnv1.RequestMeta{Tag: Tag(req)}
 
-		// Resolve the package reference from the Function resource
-		f := &pkgv1.Function{}
-		if err := c.client.Get(ctx, client.ObjectKey{Name: fn.FunctionRef.Name}, f); err != nil {
-			return CompositionResult{}, errors.Wrapf(err, errFmtRunPipelineStep, fn.Step)
+		pkg := fn.FunctionRef.Package
+		if pkg == "" {
+			// Resolve the package reference from the Function resource
+			f := &pkgv1.Function{}
+			if err := c.client.Get(ctx, client.ObjectKey{Name: fn.FunctionRef.Name}, f); err != nil {
+				return CompositionResult{}, errors.Wrapf(err, errFmtRunPipelineStep, fn.Step)
+			}
+			pkg = f.Spec.Package
 		}
 
-		rsp, err := c.pipeline.RunFunction(ctx, f.Spec.Package, req)
+		rsp, err := c.pipeline.RunFunction(ctx, pkg, req)
 		if err != nil {
 			return CompositionResult{}, errors.Wrapf(err, errFmtRunPipelineStep, fn.Step)
 		}

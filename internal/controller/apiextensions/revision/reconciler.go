@@ -19,9 +19,15 @@ package revision
 
 import (
 	"context"
+	"crypto/sha256"
+	"fmt"
 	"strings"
 	"time"
 
+	"github.com/google/go-containerregistry/pkg/name"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -41,6 +47,7 @@ import (
 	pkgv1 "github.com/crossplane/crossplane/v2/apis/pkg/v1"
 	"github.com/crossplane/crossplane/v2/internal/controller/apiextensions/controller"
 	"github.com/crossplane/crossplane/v2/internal/xfn"
+	"github.com/crossplane/crossplane/v2/internal/xpkg"
 )
 
 const (
@@ -148,6 +155,52 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		"name", rev.GetName(),
 		"revision", rev.Spec.Revision,
 	)
+
+	// Ensure function revisions exist for all functions in the pipeline that
+	// are specified by package. Assume that any functions specified by name
+	// have already been created by the user.
+	for _, step := range rev.Spec.Pipeline {
+		if step.FunctionRef.Package == "" {
+			continue
+		}
+
+		ref, err := name.ParseReference(step.FunctionRef.Package, name.StrictValidation)
+		if err != nil {
+			return reconcile.Result{}, errors.Wrapf(err, "invalid package reference in step %q", step.Step)
+		}
+
+		// TODO(adamwg): Use the package manager's revisioner to create this
+		// name, for consistency.
+		h := sha256.Sum256([]byte(ref.String()))
+		revName := xpkg.FriendlyID(ref.Context().RepositoryStr(), fmt.Sprintf("%x", h))
+
+		// TODO(adamwg): This should be a functionrevision, but today the
+		// package manager won't correctly reconcile a revision that doesn't
+		// have a parent.
+		var rev pkgv1.Function
+		if err := r.client.Get(ctx, types.NamespacedName{Name: revName}, &rev); err == nil {
+			// Revision already exists.
+			continue
+		}
+
+		rev = pkgv1.Function{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: revName,
+				Labels: map[string]string{
+					pkgv1.LabelParentPackage: revName,
+				},
+			},
+			Spec: pkgv1.FunctionSpec{
+				PackageSpec: pkgv1.PackageSpec{
+					Package: step.FunctionRef.Package,
+				},
+			},
+		}
+
+		if err := r.client.Create(ctx, &rev); err != nil && !kerrors.IsAlreadyExists(err) {
+			return reconcile.Result{}, errors.Wrapf(err, "failed to create function for step %q", step.Step)
+		}
+	}
 
 	// Extract function names from the pipeline
 	names := make([]string, 0, len(rev.Spec.Pipeline))
