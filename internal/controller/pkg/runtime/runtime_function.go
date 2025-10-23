@@ -65,7 +65,7 @@ func NewFunctionHooks(client client.Client) *FunctionHooks {
 
 // Pre performs operations meant to happen before establishing objects.
 func (h *FunctionHooks) Pre(ctx context.Context, pr v1.PackageRevisionWithRuntime, build ManifestBuilder) error {
-	if pr.GetDesiredState() != v1.PackageRevisionActive {
+	if pr.GetDesiredState() == v1.PackageRevisionInactive {
 		return nil
 	}
 
@@ -108,7 +108,7 @@ func (h *FunctionHooks) Pre(ctx context.Context, pr v1.PackageRevisionWithRuntim
 
 // Post performs operations meant to happen after establishing objects.
 func (h *FunctionHooks) Post(ctx context.Context, pr v1.PackageRevisionWithRuntime, build ManifestBuilder) error {
-	if pr.GetDesiredState() != v1.PackageRevisionActive {
+	if pr.GetDesiredState() == v1.PackageRevisionInactive {
 		return nil
 	}
 
