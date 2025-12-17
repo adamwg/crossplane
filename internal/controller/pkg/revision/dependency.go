@@ -37,6 +37,7 @@ import (
 	pkgmetav1 "github.com/crossplane/crossplane/v2/apis/pkg/meta/v1"
 	v1 "github.com/crossplane/crossplane/v2/apis/pkg/v1"
 	"github.com/crossplane/crossplane/v2/apis/pkg/v1beta1"
+	"github.com/crossplane/crossplane/v2/internal/controller/pkg/controller"
 	"github.com/crossplane/crossplane/v2/internal/dag"
 	"github.com/crossplane/crossplane/v2/internal/xpkg"
 )
@@ -134,7 +135,7 @@ func (m *PackageDependencyManager) Resolve(ctx context.Context, meta pkgmetav1.P
 
 	d := m.newDag()
 
-	implied, err := d.Init(v1beta1.ToNodes(lock.Packages...))
+	implied, err := d.Init(controller.PackagesToNodes(lock.Packages...))
 	if err != nil {
 		return found, installed, invalid, errors.Wrap(err, errInitDAG)
 	}
@@ -192,7 +193,7 @@ func (m *PackageDependencyManager) Resolve(ctx context.Context, meta pkgmetav1.P
 		}
 		// Package may exist in the graph as a dependency, or may not exist at
 		// all. We need to either convert it to a full node or add it.
-		d.AddOrUpdateNodes(&self)
+		d.AddOrUpdateNodes(&controller.PackageNode{LockPackage: self})
 
 		// If any direct dependencies are missing we skip checking for
 		// transitive ones.
@@ -204,7 +205,7 @@ func (m *PackageDependencyManager) Resolve(ctx context.Context, meta pkgmetav1.P
 				continue
 			}
 
-			missing = append(missing, &dep)
+			missing = append(missing, &controller.DependencyNode{Dependency: dep})
 		}
 
 		if installed != found {
@@ -244,7 +245,7 @@ func (m *PackageDependencyManager) Resolve(ctx context.Context, meta pkgmetav1.P
 			return found, installed, invalid, errors.New(errDependencyNotInGraph)
 		}
 
-		lp, ok := n.(*v1beta1.LockPackage)
+		lp, ok := n.(*controller.PackageNode)
 		if !ok {
 			return found, installed, invalid, errors.New(errDependencyNotLockPackage)
 		}

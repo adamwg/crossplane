@@ -274,7 +274,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 
 	dag := r.newDag()
 
-	implied, err := dag.Init(v1beta1.ToNodes(lock.Packages...))
+	implied, err := dag.Init(controller.PackagesToNodes(lock.Packages...))
 	if err != nil {
 		log.Debug(errBuildDAG, "error", err)
 		status.MarkConditions(v1beta1.ResolutionFailed(errors.Wrap(err, errBuildDAG)))
@@ -305,7 +305,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	// modifies the Lock. We only create the first implied node as we will
 	// be requeued when it adds itself to the Lock, at which point we will
 	// check for missing nodes again.
-	dep, ok := implied[0].(*v1beta1.Dependency)
+	dep, ok := implied[0].(*controller.DependencyNode)
 
 	depID := dep.Identifier()
 	if !ok {
@@ -330,7 +330,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	)
 
 	if r.features.Enabled(features.EnableAlphaDependencyVersionUpgrades) {
-		l, err := NewPackageList(dep)
+		l, err := NewPackageList(&dep.Dependency)
 		if err != nil {
 			log.Debug(errGetDependency, "error", err)
 			status.MarkConditions(v1beta1.ResolutionFailed(errors.Wrap(err, errGetDependency)))
@@ -376,7 +376,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		// At this point, we know that the dependency is either missing or does not satisfy the constraints.
 		// Package does not exist. We need to create it.
 		var addVer string
-		if addVer, err = r.findDependencyVersionToInstall(ctx, dep, log, ref); err != nil {
+		if addVer, err = r.findDependencyVersionToInstall(ctx, &dep.Dependency, log, ref); err != nil {
 			log.Debug(errFindDependency, "error", errors.Wrapf(err, depID, dep.Constraints))
 			status.MarkConditions(v1beta1.ResolutionFailed(errors.Wrap(err, errFindDependency)))
 
@@ -394,7 +394,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 			return reconcile.Result{}, errors.Wrap(r.client.Status().Update(ctx, lock), errCannotUpdateStatus)
 		}
 
-		pack, err := NewPackage(dep, addVer, ref)
+		pack, err := NewPackage(&dep.Dependency, addVer, ref)
 		if err != nil {
 			log.Debug(errConstructDependency, "error", err)
 			status.MarkConditions(v1beta1.ResolutionFailed(errors.Wrap(err, errConstructDependency)))
