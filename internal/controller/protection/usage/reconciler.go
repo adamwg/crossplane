@@ -102,7 +102,7 @@ type SelectorResolver interface {
 // SetupUsage adds a controller that reconciles Usages.
 func SetupUsage(mgr ctrl.Manager, f Finder, o controller.Options) error {
 	name := "usage/" + strings.ToLower(v1beta1.UsageGroupKind)
-	r := NewReconciler(mgr, &v1beta1.Usage{}, f,
+	r := NewReconciler(mgr, &protection.UsageWrapper{}, f,
 		WithLogger(o.Logger.WithValues("controller", name)),
 		WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name), o.EventFilterFunctions...)),
 		WithPollInterval(o.PollInterval))
@@ -117,7 +117,7 @@ func SetupUsage(mgr ctrl.Manager, f Finder, o controller.Options) error {
 // SetupClusterUsage adds a controller that reconciles ClusterUsages.
 func SetupClusterUsage(mgr ctrl.Manager, f Finder, o controller.Options) error {
 	name := "usage/" + strings.ToLower(v1beta1.ClusterUsageGroupKind)
-	r := NewReconciler(mgr, &v1beta1.ClusterUsage{}, f,
+	r := NewReconciler(mgr, &protection.ClusterUsageWrapper{}, f,
 		WithLogger(o.Logger.WithValues("controller", name)),
 		WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name), o.EventFilterFunctions...)),
 		WithPollInterval(o.PollInterval))
@@ -133,7 +133,7 @@ func SetupClusterUsage(mgr ctrl.Manager, f Finder, o controller.Options) error {
 // in the apiextensions.crossplane.io API group.
 func SetupLegacyUsage(mgr ctrl.Manager, f Finder, o controller.Options) error {
 	name := "usage/" + strings.ToLower(legacy.UsageGroupKind)
-	r := NewReconciler(mgr, &legacy.Usage{}, f, //nolint:staticcheck // It's deprecated, but we still need to support it.
+	r := NewReconciler(mgr, &protection.LegacyUsageWrapper{}, f,
 		WithLogger(o.Logger.WithValues("controller", name)),
 		WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name), o.EventFilterFunctions...)),
 		WithPollInterval(o.PollInterval))

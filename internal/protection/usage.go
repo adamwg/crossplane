@@ -102,4 +102,7 @@ type Usage interface { //nolint:interfacebloat // This represents an API type - 
 	DeletionReplayer
 
 	resource.Conditioned
+
+	// Unwrap returns the original API object for the usage.
+	Unwrap() resource.Object
 }
