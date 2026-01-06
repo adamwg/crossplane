@@ -6,7 +6,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	corev1 "k8s.io/api/core/v1"
 
-	commonv1 "github.com/crossplane/crossplane/v2/apis/common/v1"
+	commonv1 "github.com/crossplane/crossplane/apis/v2/common/v1"
 )
 
 func TestPackageHealth(t *testing.T) {

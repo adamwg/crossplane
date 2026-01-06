@@ -17,12 +17,13 @@ limitations under the License.
 package v1beta1
 
 import (
+	// We can't import crossplane-runtime from apis.
+	"errors"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/conversion"
 
-	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
-
-	v1 "github.com/crossplane/crossplane/v2/apis/pkg/meta/v1"
+	v1 "github.com/crossplane/crossplane/apis/v2/pkg/meta/v1"
 )
 
 const (

@@ -21,7 +21,7 @@ package v1beta1
 import (
 	corev1 "k8s.io/api/core/v1"
 
-	xpv1 "github.com/crossplane/crossplane/v2/apis/common/v1"
+	xpv1 "github.com/crossplane/crossplane/apis/v2/common/v1"
 )
 
 // PackageRevisionDesiredState is the desired state of the package revision.

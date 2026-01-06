@@ -17,7 +17,7 @@ limitations under the License.
 package controller
 
 import (
-	"github.com/crossplane/crossplane/v2/apis/pkg/v1beta1"
+	"github.com/crossplane/crossplane/apis/v2/pkg/v1beta1"
 	"github.com/crossplane/crossplane/v2/internal/dag"
 )
 

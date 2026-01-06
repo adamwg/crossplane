@@ -17,13 +17,13 @@ limitations under the License.
 package common
 
 import (
+	// We can't import crossplane-runtime from apis.
+	"errors"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
 )
 
 func TestConditionEqual(t *testing.T) {

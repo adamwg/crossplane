@@ -21,7 +21,7 @@ package v1beta1
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	xpv1 "github.com/crossplane/crossplane/v2/apis/common/v1"
+	xpv1 "github.com/crossplane/crossplane/apis/v2/common/v1"
 )
 
 // +kubebuilder:object:root=true

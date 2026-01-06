@@ -4,7 +4,7 @@
 package v1
 
 import (
-	common "github.com/crossplane/crossplane/v2/apis/common"
+	common "github.com/crossplane/crossplane/apis/v2/common"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 
