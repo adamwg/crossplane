@@ -32,7 +32,7 @@ import (
 	"sigs.k8s.io/e2e-framework/pkg/features"
 	"sigs.k8s.io/e2e-framework/third_party/helm"
 
-	xpv1 "github.com/crossplane/crossplane/v2/apis/common/v1"
+	xpv1 "github.com/crossplane/crossplane/apis/v2/common/v1"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/fieldpath"
 
 	apiextensionsv1 "github.com/crossplane/crossplane/apis/v2/apiextensions/v1"
