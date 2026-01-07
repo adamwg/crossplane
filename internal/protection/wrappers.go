@@ -19,7 +19,7 @@ limitations under the License.
 package protection
 
 import (
-	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
+	xpv1 "github.com/crossplane/crossplane/v2/apis/common/v1"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
 
 	legacy "github.com/crossplane/crossplane/v2/apis/apiextensions/v1beta1"
