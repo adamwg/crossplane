@@ -892,10 +892,10 @@ func TestReconcile(t *testing.T) {
 								return &dag.DependencyNode{
 									Dependency: v1beta1.Dependency{
 										Package: "xpkg.crossplane.io/cool-repo/cool-image",
-										ParentConstraints: []string{
-											">v1.0.0",
-										},
-										Type: ptr.To(v1beta1.ProviderPackageType),
+										Type:    ptr.To(v1beta1.ProviderPackageType),
+									},
+									ParentConstraints: []string{
+										">v1.0.0",
 									},
 								}, nil
 							},
@@ -960,10 +960,10 @@ func TestReconcile(t *testing.T) {
 								return &dag.DependencyNode{
 									Dependency: v1beta1.Dependency{
 										Package: "xpkg.crossplane.io/cool-repo/cool-image",
-										ParentConstraints: []string{
-											">v1.0.0",
-										},
-										Type: ptr.To(v1beta1.ProviderPackageType),
+										Type:    ptr.To(v1beta1.ProviderPackageType),
+									},
+									ParentConstraints: []string{
+										">v1.0.0",
 									},
 								}, nil
 							},
@@ -1024,11 +1024,11 @@ func TestReconcile(t *testing.T) {
 								return &dag.DependencyNode{
 									Dependency: v1beta1.Dependency{
 										Package: "xpkg.crossplane.io/cool-repo/cool-image",
-										ParentConstraints: []string{
-											digest1,
-											digest1,
-										},
-										Type: ptr.To(v1beta1.ProviderPackageType),
+										Type:    ptr.To(v1beta1.ProviderPackageType),
+									},
+									ParentConstraints: []string{
+										digest1,
+										digest1,
 									},
 								}, nil
 							},
@@ -1076,10 +1076,10 @@ func TestFindDigestToUpdate(t *testing.T) {
 				node: &dag.DependencyNode{
 					Dependency: v1beta1.Dependency{
 						Package: "xpkg.crossplane.io/cool-repo/cool-image",
-						ParentConstraints: []string{
-							digest1,
-							digest1,
-						},
+					},
+					ParentConstraints: []string{
+						digest1,
+						digest1,
 					},
 				},
 			},
@@ -1093,10 +1093,10 @@ func TestFindDigestToUpdate(t *testing.T) {
 				node: &dag.DependencyNode{
 					Dependency: v1beta1.Dependency{
 						Package: "xpkg.crossplane.io/cool-repo/cool-image",
-						ParentConstraints: []string{
-							digest1,
-							digest2,
-						},
+					},
+					ParentConstraints: []string{
+						digest1,
+						digest2,
 					},
 				},
 			},
@@ -1109,9 +1109,9 @@ func TestFindDigestToUpdate(t *testing.T) {
 			args: args{
 				node: &dag.DependencyNode{
 					Dependency: v1beta1.Dependency{
-						Package:           "xpkg.crossplane.io/cool-repo/cool-image",
-						ParentConstraints: []string{"v0.0.1", "v0.0.2"},
+						Package: "xpkg.crossplane.io/cool-repo/cool-image",
 					},
+					ParentConstraints: []string{"v0.0.1", "v0.0.2"},
 				},
 			},
 			want: want{
@@ -1125,10 +1125,10 @@ func TestFindDigestToUpdate(t *testing.T) {
 				node: &dag.DependencyNode{
 					Dependency: v1beta1.Dependency{
 						Package: "xpkg.crossplane.io/cool-repo/cool-image",
-						ParentConstraints: []string{
-							"v0.0.1",
-							digest1,
-						},
+					},
+					ParentConstraints: []string{
+						"v0.0.1",
+						digest1,
 					},
 				},
 			},
@@ -1178,10 +1178,10 @@ func TestReconcilerFindDependencyVersionToUpgrade(t *testing.T) {
 				dep: &dag.DependencyNode{
 					Dependency: v1beta1.Dependency{
 						Package: "xpkg.crossplane.io/cool-repo/cool-image",
-						ParentConstraints: []string{
-							digest1,
-							digest1,
-						},
+					},
+					ParentConstraints: []string{
+						digest1,
+						digest1,
 					},
 				},
 			},
@@ -1197,10 +1197,10 @@ func TestReconcilerFindDependencyVersionToUpgrade(t *testing.T) {
 				dep: &dag.DependencyNode{
 					Dependency: v1beta1.Dependency{
 						Package: "xpkg.crossplane.io/cool-repo/cool-image",
-						ParentConstraints: []string{
-							digest1,
-							"v0.0.1",
-						},
+					},
+					ParentConstraints: []string{
+						digest1,
+						"v0.0.1",
 					},
 				},
 			},
@@ -1216,10 +1216,10 @@ func TestReconcilerFindDependencyVersionToUpgrade(t *testing.T) {
 				dep: &dag.DependencyNode{
 					Dependency: v1beta1.Dependency{
 						Package: "xpkg.crossplane.io/cool-repo/cool-image",
-						ParentConstraints: []string{
-							">=v1.0.0",
-							"v2.0.0",
-						},
+					},
+					ParentConstraints: []string{
+						">=v1.0.0",
+						"v2.0.0",
 					},
 				},
 				rec: []ReconcilerOption{
@@ -1240,10 +1240,10 @@ func TestReconcilerFindDependencyVersionToUpgrade(t *testing.T) {
 				dep: &dag.DependencyNode{
 					Dependency: v1beta1.Dependency{
 						Package: "xpkg.crossplane.io/cool-repo/cool-image",
-						ParentConstraints: []string{
-							">=v1.0.0",
-							"v2.0.0",
-						},
+					},
+					ParentConstraints: []string{
+						">=v1.0.0",
+						"v2.0.0",
 					},
 				},
 				rec: []ReconcilerOption{
@@ -1264,10 +1264,10 @@ func TestReconcilerFindDependencyVersionToUpgrade(t *testing.T) {
 				dep: &dag.DependencyNode{
 					Dependency: v1beta1.Dependency{
 						Package: "xpkg.crossplane.io/cool-repo/cool-image",
-						ParentConstraints: []string{
-							"<=v1.0.0",
-							"v0.0.1",
-						},
+					},
+					ParentConstraints: []string{
+						"<=v1.0.0",
+						"v0.0.1",
 					},
 				},
 				rec: []ReconcilerOption{
@@ -1288,10 +1288,10 @@ func TestReconcilerFindDependencyVersionToUpgrade(t *testing.T) {
 				dep: &dag.DependencyNode{
 					Dependency: v1beta1.Dependency{
 						Package: "xpkg.crossplane.io/cool-repo/cool-image",
-						ParentConstraints: []string{
-							">v2.0.0",
-							"<=v3.0.0",
-						},
+					},
+					ParentConstraints: []string{
+						">v2.0.0",
+						"<=v3.0.0",
 					},
 				},
 				rec: []ReconcilerOption{
@@ -1313,10 +1313,10 @@ func TestReconcilerFindDependencyVersionToUpgrade(t *testing.T) {
 				dep: &dag.DependencyNode{
 					Dependency: v1beta1.Dependency{
 						Package: "xpkg.crossplane.io/cool-repo/cool-image",
-						ParentConstraints: []string{
-							">=v0.0.1",
-							"<v3.0.0",
-						},
+					},
+					ParentConstraints: []string{
+						">=v0.0.1",
+						"<v3.0.0",
 					},
 				},
 				rec: []ReconcilerOption{
