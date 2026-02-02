@@ -426,7 +426,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return reconcile.Result{}, errors.Errorf(errFmtMissingDependency, depID)
 	}
 
-	newVer, err := r.findDependencyVersionToUpdate(ctx, ref, installedVersion, n, log)
+	newVer, err := r.findDependencyVersionToUpdate(ctx, ref, installedVersion, dag, n, log)
 	if err != nil {
 		log.Debug(errFindDependencyUpgrade, "error", errors.Wrapf(err, depID, dep.Constraints))
 		status.MarkConditions(v1beta1.ResolutionFailed(errors.Wrap(err, errFindDependencyUpgrade)))
@@ -509,9 +509,9 @@ func (r *Reconciler) findDependencyVersionToInstall(ctx context.Context, dep *v1
 }
 
 // findDependencyVersionToUpdate finds a valid version to update the dependency considering the parent constraints.
-func (r *Reconciler) findDependencyVersionToUpdate(ctx context.Context, ref name.Reference, insVer string, dep internaldag.Node, log logging.Logger) (string, error) {
+func (r *Reconciler) findDependencyVersionToUpdate(ctx context.Context, ref name.Reference, insVer string, dag internaldag.DAG, dep internaldag.Node, log logging.Logger) (string, error) {
 	// If there is a digest in the parent constraints, we need to make sure that all other parent constraints are the same.
-	digest, err := findDigestToUpdate(dep)
+	digest, err := findDigestToUpdate(dag, dep)
 	if err != nil {
 		log.Debug("cannot find digest to update", "error", err)
 		return "", err
@@ -540,15 +540,18 @@ func (r *Reconciler) findDependencyVersionToUpdate(ctx context.Context, ref name
 		availableVersions = append(availableVersions, v)
 	}
 
-	parentConstraints := make([]*semver.Constraints, 0, len(dep.GetParentConstraints()))
-	for _, c := range dep.GetParentConstraints() {
-		constraint, err := semver.NewConstraint(c)
-		if err != nil {
-			log.Debug(errInvalidConstraint, "error", err)
-			return "", errors.Wrap(err, errInvalidConstraint)
+	parents, err := dag.NodeParents(dep.Identifier())
+	if err != nil {
+		return "", err
+	}
+	parentConstraints := make([]string, len(parents))
+	for i, p := range parents {
+		for _, d := range p.Children() {
+			if d.Identifier() == dep.Identifier() {
+				parentConstraints[i] = d.GetConstraints()
+				break
+			}
 		}
-
-		parentConstraints = append(parentConstraints, constraint)
 	}
 
 	sort.Sort(semver.Collection(availableVersions))
@@ -561,7 +564,13 @@ func (r *Reconciler) findDependencyVersionToUpdate(ctx context.Context, ref name
 		valid := true
 
 		for _, c := range parentConstraints {
-			if !c.Check(v) {
+			constraint, err := semver.NewConstraint(c)
+			if err != nil {
+				log.Debug(errInvalidConstraint, "error", err)
+				return "", errors.Wrap(err, errInvalidConstraint)
+			}
+
+			if !constraint.Check(v) {
 				valid = false
 				break
 			}
@@ -582,21 +591,41 @@ func (r *Reconciler) findDependencyVersionToUpdate(ctx context.Context, ref name
 		return targetVersion.Original(), nil
 	}
 
-	log.Debug(errFindDependencyUpgrade, "error", errors.Errorf(errFmtNoValidVersion, dep.Identifier(), dep.GetParentConstraints()))
+	log.Debug(errFindDependencyUpgrade, "error",
+		errors.Errorf(
+			errFmtNoValidVersion,
+			dep.Identifier(),
+			parentConstraints,
+		),
+	)
 
-	return "", errors.Errorf(errFmtNoValidVersion, dep.Identifier(), dep.GetParentConstraints())
+	return "", errors.Errorf(errFmtNoValidVersion, dep.Identifier(), parentConstraints)
 }
 
 // findDigestToUpdate returns the digest to update if all parent constraints are the same digest.
 // It returns an error, if there is at least one digest which is different from other constraints.
-func findDigestToUpdate(node internaldag.Node) (string, error) {
+func findDigestToUpdate(dag internaldag.DAG, node internaldag.Node) (string, error) {
 	foundDigest := ""
 	foundVersion := false
 
-	for _, c := range node.GetParentConstraints() {
+	parents, err := dag.NodeParents(node.Identifier())
+	if err != nil {
+		return "", err
+	}
+
+	parentConstraints := make([]string, len(parents))
+	for i, n := range parents {
+		for _, dep := range n.Children() {
+			if dep.Identifier() == node.Identifier() {
+				parentConstraints[i] = dep.GetConstraints()
+			}
+		}
+	}
+
+	for _, c := range parentConstraints {
 		if d, err := conregv1.NewHash(c); err == nil {
 			if foundDigest != "" && foundDigest != d.String() {
-				return "", errors.Errorf(errFmtDiffDigests, node.GetParentConstraints())
+				return "", errors.Errorf(errFmtDiffDigests, parentConstraints)
 			}
 
 			foundDigest = d.String()
@@ -605,7 +634,7 @@ func findDigestToUpdate(node internaldag.Node) (string, error) {
 		}
 
 		if foundVersion && foundDigest != "" {
-			return "", errors.Errorf(errFmtDiffConstraintTypes, node.GetParentConstraints())
+			return "", errors.Errorf(errFmtDiffConstraintTypes, parentConstraints)
 		}
 	}
 

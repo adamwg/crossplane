@@ -92,10 +92,6 @@ func (d *MapUpgradingDag) AddNode(node Node) error {
 // identifier.
 func (d *MapUpgradingDag) AddOrUpdateNodes(nodes ...Node) {
 	for _, node := range nodes {
-		if _, ok := d.nodes[node.Identifier()]; ok {
-			node.AddParentConstraints(d.nodes[node.Identifier()].GetParentConstraints())
-		}
-
 		d.nodes[node.Identifier()] = node
 	}
 }
@@ -202,14 +198,10 @@ func (d *MapUpgradingDag) AddEdge(from string, to Node) (bool, error) {
 		}
 	} else if !isValidConstraints(orgTo, to) { // check if upgrade is needed
 		err := d.nodes[from].AddChildren(to)
-		n := d.nodes[to.Identifier()]
-		n.AddParentConstraints(to.GetParentConstraints())
-
 		return true, err
 	}
 
 	err := d.nodes[from].AddChildren(to)
-	d.nodes[to.Identifier()].AddParentConstraints(to.GetParentConstraints())
 	d.parents[to.Identifier()] = append(d.parents[to.Identifier()], d.nodes[from])
 
 	return implied, err

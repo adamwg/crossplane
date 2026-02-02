@@ -22,14 +22,11 @@ import (
 )
 
 // Node is a node in DAG.
-type Node interface { //nolint:interfacebloat // NOTE(ezgidemirel): Interface is extended to support package version update capability.
+type Node interface {
 	Identifier() string
 	Children() []Node
 	// GetConstraints Returns the version or constraint of the package.
 	GetConstraints() string
-	// GetParentConstraints Returns the version or constraint of the package which comes from its parents.
-	GetParentConstraints() []string
-	AddParentConstraints(c []string)
 
 	// Node implementations should be careful to establish uniqueness of
 	// children in their AddChildren method or risk counting a child multiple
@@ -66,7 +63,7 @@ type NewDAGFn func() DAG
 // NewMapDag creates a new MapDag.
 func NewMapDag() DAG {
 	return &MapDag{
-		nodes: map[string]Node{},
+		nodes:   map[string]Node{},
 		parents: map[string][]Node{},
 	}
 }
