@@ -197,14 +197,11 @@ func (d *MapUpgradingDag) AddEdge(from string, to Node) (bool, error) {
 			return implied, err
 		}
 	} else if !isValidConstraints(orgTo, to) { // check if upgrade is needed
-		err := d.nodes[from].AddChildren(to)
-		return true, err
+		return true, nil
 	}
 
-	err := d.nodes[from].AddChildren(to)
 	d.parents[to.Identifier()] = append(d.parents[to.Identifier()], d.nodes[from])
-
-	return implied, err
+	return implied, nil
 }
 
 // Sort performs topological sort on the graph.

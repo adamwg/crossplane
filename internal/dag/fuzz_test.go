@@ -17,7 +17,6 @@ limitations under the License.
 package dag
 
 import (
-	"errors"
 	"testing"
 
 	fuzz "github.com/AdaLogics/go-fuzz-headers"
@@ -35,23 +34,6 @@ func toNodesFuzz(n []SimpleFuzzNode) []Node {
 	}
 
 	return nodes
-}
-
-func (s *SimpleFuzzNode) AddChildren(nodes ...Node) error {
-	for _, n := range nodes {
-		sn, ok := n.(*SimpleFuzzNode)
-		if !ok {
-			return errors.New("not a simple node")
-		}
-
-		if s.NeighborsField == nil {
-			s.NeighborsField = make(map[string]SimpleFuzzNode)
-		}
-
-		s.NeighborsField[sn.Identifier()] = *sn
-	}
-
-	return nil
 }
 
 func (s *SimpleFuzzNode) Identifier() string {

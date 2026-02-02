@@ -45,19 +45,6 @@ func (s *simpleNode) Children() []Node {
 	return nodes
 }
 
-func (s *simpleNode) AddChildren(nodes ...Node) error {
-	for _, n := range nodes {
-		sn, ok := n.(*simpleNode)
-		if !ok {
-			return errors.New("not a simple node")
-		}
-
-		s.neighbors[sn.Identifier()] = *sn
-	}
-
-	return nil
-}
-
 func (s *simpleNode) GetConstraints() string {
 	return ""
 }

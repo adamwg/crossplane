@@ -27,11 +27,6 @@ type Node interface {
 	Children() []Node
 	// GetConstraints Returns the version or constraint of the package.
 	GetConstraints() string
-
-	// Node implementations should be careful to establish uniqueness of
-	// children in their AddChildren method or risk counting a child multiple
-	// times.
-	AddChildren(ns ...Node) error
 }
 
 // DAG is a Directed Acyclic Graph.
@@ -225,7 +220,7 @@ func (d *MapDag) AddEdge(from string, to Node) (bool, error) {
 	}
 
 	d.parents[to.Identifier()] = append(d.parents[to.Identifier()], d.nodes[from])
-	return implied, d.nodes[from].AddChildren(to)
+	return implied, nil
 }
 
 // Sort performs topological sort on the graph.

@@ -36,12 +36,6 @@ func (d *DependencyNode) Children() []Node {
 	return nil
 }
 
-// AddChildren is a no-op for dependencies since we don't know their
-// dependencies.
-func (d *DependencyNode) AddChildren(nodes ...Node) error {
-	return nil
-}
-
 // GetConstraints returns a dependency's constrain.
 func (d *DependencyNode) GetConstraints() string {
 	return d.Constraints
@@ -60,12 +54,6 @@ func (l *PackageNode) Children() []Node {
 	}
 
 	return nodes
-}
-
-// AddChildren is a no-op for packages since they already know their children
-// (dependencies).
-func (l *PackageNode) AddChildren(nodes ...Node) error {
-	return nil
 }
 
 // GetConstraints returns the version of a LockPackage.
