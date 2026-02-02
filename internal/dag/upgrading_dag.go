@@ -25,7 +25,8 @@ import (
 // MapUpgradingDag is a directed acyclic graph implementation that uses a map for its
 // underlying data structure and has the ability to distinguish upgradable nodes.
 type MapUpgradingDag struct {
-	nodes map[string]Node
+	nodes   map[string]Node
+	parents map[string][]Node
 }
 
 // NewUpgradingDAGFn is a function that returns a DAG.
@@ -33,7 +34,10 @@ type NewUpgradingDAGFn func() DAG
 
 // NewUpgradingMapDag creates a new MapDag.
 func NewUpgradingMapDag() DAG {
-	return &MapUpgradingDag{nodes: map[string]Node{}}
+	return &MapUpgradingDag{
+		nodes:   map[string]Node{},
+		parents: map[string][]Node{},
+	}
 }
 
 // Init initializes a MapDag and implies missing destination nodes. Any implied
@@ -109,6 +113,16 @@ func (d *MapUpgradingDag) NodeChildren(identifier string) ([]Node, error) {
 	}
 
 	return d.nodes[identifier].Children(), nil
+}
+
+// NodeParents returns a node's parents, or nil if a node has no parents (i.e.,
+// is a root).
+func (d *MapUpgradingDag) NodeParents(identifier string) ([]Node, error) {
+	if _, ok := d.nodes[identifier]; !ok {
+		return nil, errors.Errorf("node %s does not exist", identifier)
+	}
+
+	return d.parents[identifier], nil
 }
 
 // TraceNode returns a node's neighbors and all transitive neighbors using depth
@@ -196,6 +210,7 @@ func (d *MapUpgradingDag) AddEdge(from string, to Node) (bool, error) {
 
 	err := d.nodes[from].AddChildren(to)
 	d.nodes[to.Identifier()].AddParentConstraints(to.GetParentConstraints())
+	d.parents[to.Identifier()] = append(d.parents[to.Identifier()], d.nodes[from])
 
 	return implied, err
 }

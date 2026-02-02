@@ -48,6 +48,7 @@ type DAG interface { //nolint:interfacebloat // TODO(negz): Could this be severa
 	AddEdges(edges map[string][]Node) ([]Node, error)
 	NodeExists(identifier string) bool
 	NodeChildren(identifier string) ([]Node, error)
+	NodeParents(identifier string) ([]Node, error)
 	TraceNode(identifier string) (map[string]Node, error)
 	Sort() ([]string, error)
 }
@@ -56,6 +57,7 @@ type DAG interface { //nolint:interfacebloat // TODO(negz): Could this be severa
 // underlying data structure.
 type MapDag struct {
 	nodes map[string]Node
+	parents map[string][]Node
 }
 
 // NewDAGFn is a function that returns a DAG.
@@ -63,7 +65,10 @@ type NewDAGFn func() DAG
 
 // NewMapDag creates a new MapDag.
 func NewMapDag() DAG {
-	return &MapDag{nodes: map[string]Node{}}
+	return &MapDag{
+		nodes: map[string]Node{},
+		parents: map[string][]Node{},
+	}
 }
 
 // Init initializes a MapDag and implies missing destination nodes. Any implied
@@ -135,6 +140,16 @@ func (d *MapDag) NodeChildren(identifier string) ([]Node, error) {
 	}
 
 	return d.nodes[identifier].Children(), nil
+}
+
+// NodeParents returns a node's parents, or nil if a node has no parents (i.e.,
+// is a root).
+func (d *MapDag) NodeParents(identifier string) ([]Node, error) {
+	if _, ok := d.nodes[identifier]; !ok {
+		return nil, errors.Errorf("node %s does not exist", identifier)
+	}
+
+	return d.parents[identifier], nil
 }
 
 // TraceNode returns a node's children and all transitive children using depth
@@ -212,6 +227,7 @@ func (d *MapDag) AddEdge(from string, to Node) (bool, error) {
 		}
 	}
 
+	d.parents[to.Identifier()] = append(d.parents[to.Identifier()], d.nodes[from])
 	return implied, d.nodes[from].AddChildren(to)
 }
 
