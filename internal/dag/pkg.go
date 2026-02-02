@@ -34,14 +34,14 @@ type DependencyNode struct {
 	ParentConstraints []string
 }
 
-// Neighbors in is a no-op for dependencies because we are not yet aware of its
+// Children in is a no-op for dependencies because we are not yet aware of its
 // dependencies.
-func (d *DependencyNode) Neighbors() []Node {
+func (d *DependencyNode) Children() []Node {
 	return nil
 }
 
-// AddNeighbors adds parent constraints to a dependency in the DAG.
-func (d *DependencyNode) AddNeighbors(nodes ...Node) error {
+// AddChildren adds parent constraints to a dependency in the DAG.
+func (d *DependencyNode) AddChildren(nodes ...Node) error {
 	for _, n := range nodes {
 		n.AddParentConstraints([]string{d.Constraints})
 	}
@@ -73,8 +73,8 @@ type PackageNode struct {
 	ParentConstraints []string
 }
 
-// Neighbors returns dependencies of a LockPackage.
-func (l *PackageNode) Neighbors() []Node {
+// Children returns dependencies of a LockPackage.
+func (l *PackageNode) Children() []Node {
 	nodes := make([]Node, len(l.Dependencies))
 	for i, r := range l.Dependencies {
 		nodes[i] = &DependencyNode{Dependency: r}
@@ -83,9 +83,9 @@ func (l *PackageNode) Neighbors() []Node {
 	return nodes
 }
 
-// AddNeighbors adds dependencies to a LockPackage and
+// AddChildren adds dependencies to a LockPackage and
 // updates the parent constraints of the dependencies in the DAG.
-func (l *PackageNode) AddNeighbors(nodes ...Node) error {
+func (l *PackageNode) AddChildren(nodes ...Node) error {
 	for _, n := range nodes {
 		for _, dep := range l.Dependencies {
 			if dep.Identifier() == n.Identifier() {

@@ -37,7 +37,7 @@ func toNodesFuzz(n []SimpleFuzzNode) []Node {
 	return nodes
 }
 
-func (s *SimpleFuzzNode) AddNeighbors(nodes ...Node) error {
+func (s *SimpleFuzzNode) AddChildren(nodes ...Node) error {
 	for _, n := range nodes {
 		sn, ok := n.(*SimpleFuzzNode)
 		if !ok {
@@ -58,7 +58,7 @@ func (s *SimpleFuzzNode) Identifier() string {
 	return s.IdentifierString
 }
 
-func (s *SimpleFuzzNode) Neighbors() []Node {
+func (s *SimpleFuzzNode) Children() []Node {
 	nodes := make([]Node, len(s.NeighborsField))
 
 	i := 0
@@ -118,6 +118,6 @@ func FuzzDag(f *testing.F) {
 		c.GenerateStruct(fuzzNode)
 		_, _ = d.AddEdge(from, fuzzNode)
 		d.Sort()
-		d.NodeNeighbors(identifier)
+		d.NodeChildren(identifier)
 	})
 }

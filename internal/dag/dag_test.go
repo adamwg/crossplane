@@ -33,7 +33,7 @@ func (s *simpleNode) Identifier() string {
 	return s.identifier
 }
 
-func (s *simpleNode) Neighbors() []Node {
+func (s *simpleNode) Children() []Node {
 	nodes := make([]Node, len(s.neighbors))
 
 	i := 0
@@ -45,7 +45,7 @@ func (s *simpleNode) Neighbors() []Node {
 	return nodes
 }
 
-func (s *simpleNode) AddNeighbors(nodes ...Node) error {
+func (s *simpleNode) AddChildren(nodes ...Node) error {
 	for _, n := range nodes {
 		sn, ok := n.(*simpleNode)
 		if !ok {

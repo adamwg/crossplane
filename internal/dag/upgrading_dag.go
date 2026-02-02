@@ -50,7 +50,7 @@ func (d *MapUpgradingDag) Init(nodes []Node) ([]Node, error) {
 	var implied []Node
 	for _, node := range nodes {
 		miss, err := d.AddEdges(map[string][]Node{
-			node.Identifier(): node.Neighbors(),
+			node.Identifier(): node.Children(),
 		})
 		if err != nil {
 			return nil, err
@@ -102,13 +102,13 @@ func (d *MapUpgradingDag) NodeExists(identifier string) bool {
 	return exists
 }
 
-// NodeNeighbors returns a node's neighbors.
-func (d *MapUpgradingDag) NodeNeighbors(identifier string) ([]Node, error) {
+// NodeChildren returns a node's neighbors.
+func (d *MapUpgradingDag) NodeChildren(identifier string) ([]Node, error) {
 	if _, ok := d.nodes[identifier]; !ok {
 		return nil, errors.Errorf("node %s does not exist", identifier)
 	}
 
-	return d.nodes[identifier].Neighbors(), nil
+	return d.nodes[identifier].Children(), nil
 }
 
 // TraceNode returns a node's neighbors and all transitive neighbors using depth
@@ -127,7 +127,7 @@ func (d *MapUpgradingDag) traceNode(identifier string, tree map[string]Node) err
 		return errors.New("missing node in tree")
 	}
 
-	for _, n := range d.nodes[identifier].Neighbors() {
+	for _, n := range d.nodes[identifier].Children() {
 		// if we have already visited this neighbor, then we have already
 		// visited its neighbors, so we can skip.
 		if _, ok := tree[n.Identifier()]; ok {
@@ -187,14 +187,14 @@ func (d *MapUpgradingDag) AddEdge(from string, to Node) (bool, error) {
 			return implied, err
 		}
 	} else if !isValidConstraints(orgTo, to) { // check if upgrade is needed
-		err := d.nodes[from].AddNeighbors(to)
+		err := d.nodes[from].AddChildren(to)
 		n := d.nodes[to.Identifier()]
 		n.AddParentConstraints(to.GetParentConstraints())
 
 		return true, err
 	}
 
-	err := d.nodes[from].AddNeighbors(to)
+	err := d.nodes[from].AddChildren(to)
 	d.nodes[to.Identifier()].AddParentConstraints(to.GetParentConstraints())
 
 	return implied, err
@@ -208,7 +208,7 @@ func (d *MapUpgradingDag) Sort() ([]string, error) {
 	for n, node := range d.nodes {
 		if !visited[n] {
 			stack := map[string]bool{}
-			if err := d.visit(n, node.Neighbors(), stack, visited, results); err != nil {
+			if err := d.visit(n, node.Children(), stack, visited, results); err != nil {
 				return nil, err
 			}
 		}
@@ -227,7 +227,7 @@ func (d *MapUpgradingDag) visit(name string, neighbors []Node, stack map[string]
 				return errors.Errorf("node %q does not exist", n.Identifier())
 			}
 
-			if err := d.visit(n.Identifier(), d.nodes[n.Identifier()].Neighbors(), stack, visited, results); err != nil {
+			if err := d.visit(n.Identifier(), d.nodes[n.Identifier()].Children(), stack, visited, results); err != nil {
 				return err
 			}
 		} else if stack[n.Identifier()] {

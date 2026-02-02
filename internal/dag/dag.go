@@ -24,7 +24,7 @@ import (
 // Node is a node in DAG.
 type Node interface { //nolint:interfacebloat // NOTE(ezgidemirel): Interface is extended to support package version update capability.
 	Identifier() string
-	Neighbors() []Node
+	Children() []Node
 	// GetConstraints Returns the version or constraint of the package.
 	GetConstraints() string
 	// GetParentConstraints Returns the version or constraint of the package which comes from its parents.
@@ -32,9 +32,9 @@ type Node interface { //nolint:interfacebloat // NOTE(ezgidemirel): Interface is
 	AddParentConstraints(c []string)
 
 	// Node implementations should be careful to establish uniqueness of
-	// neighbors in their AddNeighbors method or risk counting a neighbor
-	// multiple times.
-	AddNeighbors(ns ...Node) error
+	// children in their AddChildren method or risk counting a child multiple
+	// times.
+	AddChildren(ns ...Node) error
 }
 
 // DAG is a Directed Acyclic Graph.
@@ -47,7 +47,7 @@ type DAG interface { //nolint:interfacebloat // TODO(negz): Could this be severa
 	AddEdge(from string, to Node) (bool, error)
 	AddEdges(edges map[string][]Node) ([]Node, error)
 	NodeExists(identifier string) bool
-	NodeNeighbors(identifier string) ([]Node, error)
+	NodeChildren(identifier string) ([]Node, error)
 	TraceNode(identifier string) (map[string]Node, error)
 	Sort() ([]string, error)
 }
@@ -80,7 +80,7 @@ func (d *MapDag) Init(nodes []Node) ([]Node, error) {
 	var implied []Node
 	for _, node := range nodes {
 		miss, err := d.AddEdges(map[string][]Node{
-			node.Identifier(): node.Neighbors(),
+			node.Identifier(): node.Children(),
 		})
 		if err != nil {
 			return nil, err
@@ -128,16 +128,16 @@ func (d *MapDag) NodeExists(identifier string) bool {
 	return exists
 }
 
-// NodeNeighbors returns a node's neighbors.
-func (d *MapDag) NodeNeighbors(identifier string) ([]Node, error) {
+// NodeChildren returns a node's children.
+func (d *MapDag) NodeChildren(identifier string) ([]Node, error) {
 	if _, ok := d.nodes[identifier]; !ok {
 		return nil, errors.Errorf("node %s does not exist", identifier)
 	}
 
-	return d.nodes[identifier].Neighbors(), nil
+	return d.nodes[identifier].Children(), nil
 }
 
-// TraceNode returns a node's neighbors and all transitive neighbors using depth
+// TraceNode returns a node's children and all transitive children using depth
 // first search.
 func (d *MapDag) TraceNode(identifier string) (map[string]Node, error) {
 	tree := map[string]Node{}
@@ -153,9 +153,9 @@ func (d *MapDag) traceNode(identifier string, tree map[string]Node) error {
 		return errors.New("missing node in tree")
 	}
 
-	for _, n := range d.nodes[identifier].Neighbors() {
-		// if we have already visited this neighbor, then we have already
-		// visited its neighbors, so we can skip.
+	for _, n := range d.nodes[identifier].Children() {
+		// if we have already visited this child, then we have already visited
+		// its children, so we can skip.
 		if _, ok := tree[n.Identifier()]; ok {
 			continue
 		}
@@ -212,7 +212,7 @@ func (d *MapDag) AddEdge(from string, to Node) (bool, error) {
 		}
 	}
 
-	return implied, d.nodes[from].AddNeighbors(to)
+	return implied, d.nodes[from].AddChildren(to)
 }
 
 // Sort performs topological sort on the graph.
@@ -223,7 +223,7 @@ func (d *MapDag) Sort() ([]string, error) {
 	for n, node := range d.nodes {
 		if !visited[n] {
 			stack := map[string]bool{}
-			if err := d.visit(n, node.Neighbors(), stack, visited, results); err != nil {
+			if err := d.visit(n, node.Children(), stack, visited, results); err != nil {
 				return nil, err
 			}
 		}
@@ -232,17 +232,17 @@ func (d *MapDag) Sort() ([]string, error) {
 	return results, nil
 }
 
-func (d *MapDag) visit(name string, neighbors []Node, stack map[string]bool, visited map[string]bool, results []string) error {
+func (d *MapDag) visit(name string, children []Node, stack map[string]bool, visited map[string]bool, results []string) error {
 	visited[name] = true
 
 	stack[name] = true
-	for _, n := range neighbors {
+	for _, n := range children {
 		if !visited[n.Identifier()] {
 			if _, ok := d.nodes[n.Identifier()]; !ok {
 				return errors.Errorf("node %q does not exist", n.Identifier())
 			}
 
-			if err := d.visit(n.Identifier(), d.nodes[n.Identifier()].Neighbors(), stack, visited, results); err != nil {
+			if err := d.visit(n.Identifier(), d.nodes[n.Identifier()].Children(), stack, visited, results); err != nil {
 				return err
 			}
 		} else if stack[n.Identifier()] {
