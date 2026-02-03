@@ -39,7 +39,6 @@ import (
 
 	"github.com/crossplane/crossplane-runtime/v2/pkg/conditions"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
-	"github.com/crossplane/crossplane-runtime/v2/pkg/feature"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/fieldpath"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/logging"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
@@ -117,14 +116,14 @@ func WithClient(c xpkg.Client) ReconcilerOption {
 	}
 }
 
-// WithFeatures specifies which feature flags should be enabled.
-func WithFeatures(f *feature.Flags) ReconcilerOption {
+// WithUpgradesEnabled enabless dependency upgrades.
+func WithUpgradesEnabled() ReconcilerOption {
 	return func(r *Reconciler) {
-		r.features = f
+		r.upgradesEnabled = true
 	}
 }
 
-// WithDowngradesEnabled sets whether upgrades are enabled or not.
+// WithDowngradesEnabled enables depdnency downgrades.
 func WithDowngradesEnabled() ReconcilerOption {
 	return func(r *Reconciler) {
 		r.downgradesEnabled = true
@@ -138,9 +137,9 @@ type Reconciler struct {
 	log        logging.Logger
 	lock       resource.Finalizer
 	newDag     internaldag.NewDAGFn
-	features   *feature.Flags
 	conditions conditions.Manager
 
+	upgradesEnabled   bool
 	downgradesEnabled bool
 }
 
@@ -151,12 +150,10 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 	opts := []ReconcilerOption{
 		WithLogger(o.Logger.WithValues("controller", name)),
 		WithClient(o.Client),
-		WithFeatures(o.Features),
 	}
 
 	if o.Features.Enabled(features.EnableAlphaDependencyVersionUpgrades) {
-		opts = append(opts, WithNewDagFn(internaldag.NewUpgradingMapDag))
-
+		opts = append(opts, WithUpgradesEnabled())
 		if o.Features.Enabled(features.EnableAlphaDependencyVersionDowngrades) {
 			opts = append(opts, WithDowngradesEnabled())
 		}
@@ -253,7 +250,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	dag := r.newDag()
 
 	packages := lock.Packages
-	if r.features.Enabled(features.EnableAlphaDependencyVersionUpgrades) {
+	if r.upgradesEnabled {
 		// Filter packages to only include those that are roots (not installed
 		// as a dependency) or match some current dependency. This prevents
 		// "orphaned" packages with incompatible versions from blocking
@@ -274,7 +271,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 
 	// Make sure we don't have any cyclical imports. If we do, refuse to
 	// install additional packages.
-	_, err = dag.Sort()
+	sorted, err := dag.Sort()
 	if err != nil {
 		log.Debug(errSortDAG, "error", err)
 		status.MarkConditions(v1beta1.ResolutionFailed(errors.Wrap(err, errSortDAG)))
@@ -282,6 +279,18 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		_ = r.kube.Status().Update(ctx, lock)
 
 		return reconcile.Result{}, errors.Wrap(err, errSortDAG)
+	}
+
+	// If all dependencies are installed and upgrades are enabled, find any
+	// dependencies that require an upgrade.
+	if len(implied) == 0 && r.upgradesEnabled {
+		outdated, err := findOutdatedDependency(dag, sorted)
+		if err != nil {
+			return reconcile.Result{}, err
+		}
+		if outdated != nil {
+			implied = append(implied, outdated)
+		}
 	}
 
 	if len(implied) == 0 {
@@ -317,7 +326,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		installedVersion string
 	)
 
-	if r.features.Enabled(features.EnableAlphaDependencyVersionUpgrades) {
+	if r.upgradesEnabled {
 		l, err := NewPackageList(&dep.Dependency)
 		if err != nil {
 			log.Debug(errGetDependency, "error", err)
@@ -408,7 +417,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return reconcile.Result{}, errors.Wrap(r.kube.Status().Update(ctx, lock), errCannotUpdateStatus)
 	}
 
-	if !r.features.Enabled(features.EnableAlphaDependencyVersionUpgrades) {
+	if !r.upgradesEnabled {
 		return reconcile.Result{}, nil
 	}
 
@@ -723,6 +732,56 @@ func matchesAnyConstraint(version string, constraints []string) bool {
 	}
 
 	return false
+}
+
+// findOutdatedDependency identifies the first dependency that is present in the
+// DAG but whose version that doesn't satisfy the desired constraints.
+func findOutdatedDependency(dag internaldag.DAG, sorted []string) (internaldag.Node, error) {
+	for _, id := range sorted {
+		node, err := dag.GetNode(id)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, ch := range node.Children() {
+			existing, err := dag.GetNode(ch.Identifier())
+			if err != nil {
+				return nil, err
+			}
+
+			if !compatibleConstraints(existing.GetConstraints(), ch.GetConstraints()) {
+				return ch, nil
+			}
+		}
+	}
+
+	return nil, nil
+}
+
+// compatibleConstraints checks whether the installed version constraints are
+// compatible with the wanted version constraints. The installed constraints
+// must be a digest or exact semantic version.
+func compatibleConstraints(installed, wanted string) bool {
+	// NOTE(ezgidemirel): This condition also satisfies digests
+	if installed == wanted {
+		return true
+	}
+
+	c, err := semver.NewConstraint(wanted)
+	if err != nil {
+		return false
+	}
+
+	v, err := semver.NewVersion(installed)
+	if err != nil {
+		return false
+	}
+
+	if !c.Check(v) {
+		return false
+	}
+
+	return true
 }
 
 // NewPackage creates a new package from the given dependency and version.

@@ -868,7 +868,7 @@ func TestReconcile(t *testing.T) {
 					},
 				},
 				rec: []ReconcilerOption{
-					WithFeatures(upgradesEnabled),
+					WithUpgradesEnabled(),
 					WithClient(&fakexpkg.MockClient{
 						MockListVersions: fakexpkg.NewMockListVersionsFn([]string{"v0.0.1", "v1.0.0", "v1.0.1", "v2.0.0"}, nil),
 					}),
@@ -945,7 +945,7 @@ func TestReconcile(t *testing.T) {
 					},
 				},
 				rec: []ReconcilerOption{
-					WithFeatures(upgradesEnabled),
+					WithUpgradesEnabled(),
 					WithClient(&fakexpkg.MockClient{
 						MockListVersions: func(_ context.Context, _ string, _ ...xpkg.GetOption) ([]string, error) {
 							// Client handles ImageConfig rewriting internally.
@@ -1026,7 +1026,7 @@ func TestReconcile(t *testing.T) {
 					},
 				},
 				rec: []ReconcilerOption{
-					WithFeatures(upgradesEnabled),
+					WithUpgradesEnabled(),
 					WithClient(&fakexpkg.MockClient{
 						MockListVersions: fakexpkg.NewMockListVersionsFn([]string{"v0.0.1", "v1.0.0", "v1.0.1", "v2.0.0"}, nil),
 					}),
