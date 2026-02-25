@@ -25,8 +25,13 @@ import (
 type Node interface {
 	Identifier() string
 	Children() []Node
-	// GetConstraints Returns the version or constraint of the package.
-	GetConstraints() string
+	// GetConstraints returns the version(s) or constraint(s) of the package
+	// represented by the node. It is possible for these constraints to be
+	// incompatible.
+	GetConstraints() []string
+	// Merge merges a node into this one. Implementations should return an error
+	// if the node cannot be merged into thiss one.
+	Merge(n Node) (Node, error)
 }
 
 // DAG is a Directed Acyclic Graph.
@@ -115,6 +120,12 @@ func (d *MapDag) AddNode(node Node) error {
 // identifier.
 func (d *MapDag) AddOrUpdateNodes(nodes ...Node) {
 	for _, node := range nodes {
+		if existing, ok := d.nodes[node.Identifier()]; ok {
+			updated, _ := existing.Merge(node)
+			d.nodes[node.Identifier()] = updated
+			continue
+		}
+
 		d.nodes[node.Identifier()] = node
 	}
 }

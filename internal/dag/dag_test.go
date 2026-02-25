@@ -45,15 +45,9 @@ func (s *simpleNode) Children() []Node {
 	return nodes
 }
 
-func (s *simpleNode) GetConstraints() string {
-	return ""
-}
-
-func (s *simpleNode) GetParentConstraints() []string {
+func (s *simpleNode) GetConstraints() []string {
 	return nil
 }
-
-func (s *simpleNode) AddParentConstraints([]string) {}
 
 func toNodes(n []simpleNode) []Node {
 	nodes := make([]Node, len(n))

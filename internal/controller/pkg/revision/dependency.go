@@ -19,6 +19,7 @@ package revision
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/Masterminds/semver"
@@ -189,7 +190,7 @@ func (m *PackageDependencyManager) Resolve(ctx context.Context, meta pkgmetav1.P
 				if err := m.client.Update(ctx, lock); err != nil {
 					return found, installed, invalid, err
 				}
-				d.AddOrUpdateNodes(&dag.PackageNode{LockPackage: self})
+				d.AddOrUpdateNodes(&dag.PackageNode{Pkgs: []v1beta1.LockPackage{self}})
 			}
 
 			break
@@ -204,7 +205,7 @@ func (m *PackageDependencyManager) Resolve(ctx context.Context, meta pkgmetav1.P
 		}
 		// Package may exist in the graph as a dependency, or may not exist at
 		// all. We need to either convert it to a full node or add it.
-		d.AddOrUpdateNodes(&dag.PackageNode{LockPackage: self})
+		d.AddOrUpdateNodes(&dag.PackageNode{Pkgs: []v1beta1.LockPackage{self}})
 
 		// If any direct dependencies are missing we skip checking for
 		// transitive ones.
@@ -216,7 +217,7 @@ func (m *PackageDependencyManager) Resolve(ctx context.Context, meta pkgmetav1.P
 				continue
 			}
 
-			missing = append(missing, &dag.DependencyNode{Dependency: dep})
+			missing = append(missing, &dag.DependencyNode{Deps: []v1beta1.Dependency{dep}})
 		}
 
 		if installed != found {
@@ -263,8 +264,8 @@ func (m *PackageDependencyManager) Resolve(ctx context.Context, meta pkgmetav1.P
 
 		// Check if the constraint is a digest, if so, compare it directly.
 		if d, err := conregv1.NewHash(dep.Constraints); err == nil {
-			if lp.Version != d.String() {
-				return found, installed, invalid, errors.Errorf("existing package %s@%s is incompatible with constraint %s", lp.Identifier(), lp.Version, strings.TrimSpace(dep.Constraints))
+			if !slices.Contains(lp.GetConstraints(), d.String()) {
+				return found, installed, invalid, errors.Errorf("existing packages %s@%v are incompatible with constraint %s", lp.Identifier(), lp.GetConstraints(), strings.TrimSpace(dep.Constraints))
 			}
 
 			continue
@@ -275,18 +276,20 @@ func (m *PackageDependencyManager) Resolve(ctx context.Context, meta pkgmetav1.P
 			return found, installed, invalid, err
 		}
 
-		v, err := semver.NewVersion(lp.Version)
-		if err != nil {
-			return found, installed, invalid, err
-		}
-
-		if !c.Check(v) {
-			s := fmt.Sprintf("existing package %s@%s", lp.Identifier(), lp.Version)
-			if dep.Constraints != "" {
-				s = fmt.Sprintf("%s is incompatible with constraint %s", s, strings.TrimSpace(dep.Constraints))
+		for _, pkg := range lp.Pkgs {
+			v, err := semver.NewVersion(pkg.Version)
+			if err != nil {
+				return found, installed, invalid, err
 			}
 
-			invalidDeps = append(invalidDeps, s)
+			if !c.Check(v) {
+				s := fmt.Sprintf("existing package %s@%s", lp.Identifier(), pkg.Version)
+				if dep.Constraints != "" {
+					s = fmt.Sprintf("%s is incompatible with constraint %s", s, strings.TrimSpace(dep.Constraints))
+				}
+
+				invalidDeps = append(invalidDeps, s)
+			}
 		}
 	}
 
@@ -332,12 +335,12 @@ func (m *PackageDependencyManager) RemoveSelf(ctx context.Context, pr v1.Package
 func NDependenciesAndSomeMore(n int, d []dag.Node) string {
 	out := make([]string, len(d))
 	for i := range d {
-		if d[i].GetConstraints() == "" {
+		if d[i].GetConstraints() == nil {
 			out[i] = fmt.Sprintf("%q", d[i].Identifier())
 			continue
 		}
 
-		out[i] = fmt.Sprintf("%q (%s)", d[i].Identifier(), d[i].GetConstraints())
+		out[i] = fmt.Sprintf("%q (%v)", d[i].Identifier(), d[i].GetConstraints())
 	}
 
 	return resource.StableNAndSomeMore(n, out)

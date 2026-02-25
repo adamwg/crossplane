@@ -291,7 +291,7 @@ func TestResolve(t *testing.T) {
 			},
 			want: want{
 				total: 2,
-				err:   errors.Errorf(errFmtMissingDependencies, `"not-here-1", "not-here-2" (>= v2.0.0)`),
+				err:   errors.Errorf(errFmtMissingDependencies, `"not-here-1" ([]), "not-here-2" ([>= v2.0.0])`),
 			},
 		},
 		"ErrorSelfExistMissingDependencies": {
@@ -336,14 +336,14 @@ func TestResolve(t *testing.T) {
 							MockInit: func(_ []dag.Node) ([]dag.Node, error) {
 								return []dag.Node{
 									&dag.DependencyNode{
-										Dependency: v1beta1.Dependency{
+										Deps: []v1beta1.Dependency{{
 											Package: "not-here-2",
-										},
+										}},
 									},
 									&dag.DependencyNode{
-										Dependency: v1beta1.Dependency{
+										Deps: []v1beta1.Dependency{{
 											Package: "not-here-3",
-										},
+										}},
 									},
 								}, nil
 							},
@@ -385,7 +385,7 @@ func TestResolve(t *testing.T) {
 			want: want{
 				total:     3,
 				installed: 1,
-				err:       errors.Errorf(errFmtMissingDependencies, `"not-here-2", "not-here-3"`),
+				err:       errors.Errorf(errFmtMissingDependencies, `"not-here-2" ([]), "not-here-3" ([])`),
 			},
 		},
 		"ErrorSelfExistInvalidDependencies": {
@@ -440,18 +440,18 @@ func TestResolve(t *testing.T) {
 							MockGetNode: func(s string) (dag.Node, error) {
 								if s == "not-here-1" {
 									return &dag.PackageNode{
-										LockPackage: v1beta1.LockPackage{
+										Pkgs: []v1beta1.LockPackage{{
 											Source:  "not-here-1",
 											Version: "v0.0.1",
-										},
+										}},
 									}, nil
 								}
 								if s == "not-here-2" {
 									return &dag.PackageNode{
-										LockPackage: v1beta1.LockPackage{
+										Pkgs: []v1beta1.LockPackage{{
 											Source:  "not-here-2",
 											Version: "v0.0.1",
-										},
+										}},
 									}, nil
 								}
 								return nil, nil
@@ -553,26 +553,26 @@ func TestResolve(t *testing.T) {
 							MockGetNode: func(s string) (dag.Node, error) {
 								if s == "not-here-1" {
 									return &dag.PackageNode{
-										LockPackage: v1beta1.LockPackage{
+										Pkgs: []v1beta1.LockPackage{{
 											Source:  "not-here-1",
 											Version: "v0.20.0",
-										},
+										}},
 									}, nil
 								}
 								if s == "not-here-2" {
 									return &dag.PackageNode{
-										LockPackage: v1beta1.LockPackage{
+										Pkgs: []v1beta1.LockPackage{{
 											Source:  "not-here-2",
 											Version: "v0.100.1",
-										},
+										}},
 									}, nil
 								}
 								if s == "function-not-here-1" {
 									return &dag.PackageNode{
-										LockPackage: v1beta1.LockPackage{
+										Pkgs: []v1beta1.LockPackage{{
 											Source:  "function-not-here-1",
 											Version: "v0.1.0",
-										},
+										}},
 									}, nil
 								}
 

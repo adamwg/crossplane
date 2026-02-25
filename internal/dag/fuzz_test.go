@@ -52,15 +52,9 @@ func (s *SimpleFuzzNode) Children() []Node {
 	return nodes
 }
 
-func (s *SimpleFuzzNode) GetConstraints() string {
-	return ""
-}
-
-func (s *SimpleFuzzNode) GetParentConstraints() []string {
+func (s *SimpleFuzzNode) GetConstraints() []string {
 	return nil
 }
-
-func (s *SimpleFuzzNode) AddParentConstraints([]string) {}
 
 func FuzzDag(f *testing.F) {
 	f.Fuzz(func(_ *testing.T, data []byte) {

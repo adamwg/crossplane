@@ -312,8 +312,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return reconcile.Result{}, errors.Wrap(r.kube.Status().Update(ctx, lock), errCannotUpdateStatus)
 	}
 
-	// NOTE(phisco): dependencies identifiers are without registry and tag, so we can't enforce strict validation.
-	ref, err := name.ParseReference(depID)
+	// Dependencies don't include tags; they are just the repository part of the
+	// OCI ref.
+	repo, err := name.NewRepository(depID, name.StrictValidation)
 	if err != nil {
 		log.Debug(errInvalidDependency, "error", err)
 		status.MarkConditions(v1beta1.ResolutionFailed(errors.Wrap(err, errInvalidDependency)))
@@ -327,7 +328,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	)
 
 	if r.upgradesEnabled {
-		l, err := NewPackageList(&dep.Dependency)
+		l, err := NewPackageList(&dep.Deps[0])
 		if err != nil {
 			log.Debug(errGetDependency, "error", err)
 			status.MarkConditions(v1beta1.ResolutionFailed(errors.Wrap(err, errGetDependency)))
@@ -362,7 +363,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 				continue
 			}
 
-			if pref.Context().Name() == ref.Context().Name() {
+			if pref.Context().Name() == repo.Name() {
 				pkg = &p
 				installedVersion = pref.Identifier()
 			}
@@ -373,8 +374,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		// At this point, we know that the dependency is either missing or does not satisfy the constraints.
 		// Package does not exist. We need to create it.
 		var addVer string
-		if addVer, err = r.findDependencyVersionToInstall(ctx, &dep.Dependency, log, ref); err != nil {
-			log.Debug(errFindDependency, "error", errors.Wrapf(err, depID, dep.Constraints))
+		if addVer, err = r.findDependencyVersionToInstall(ctx, repo, dep.GetConstraints(), log); err != nil {
+			log.Debug(errFindDependency, "error", errors.Wrapf(err, depID, dep.GetConstraints()))
 			status.MarkConditions(v1beta1.ResolutionFailed(errors.Wrap(err, errFindDependency)))
 
 			_ = r.kube.Status().Update(ctx, lock)
@@ -385,13 +386,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		// NOTE(hasheddan): consider creating event on package revision
 		// dictating constraints.
 		if addVer == "" {
-			log.Debug(errFindDependencyUpgrade, "error", errors.Errorf(errFmtNoValidVersion, depID, dep.Constraints))
-			status.MarkConditions(v1beta1.ResolutionFailed(errors.Errorf(errFmtNoValidVersion, depID, dep.Constraints)))
+			log.Debug(errFindDependencyUpgrade, "error", errors.Errorf(errFmtNoValidVersion, depID, dep.GetConstraints()))
+			status.MarkConditions(v1beta1.ResolutionFailed(errors.Errorf(errFmtNoValidVersion, depID, dep.GetConstraints())))
 
 			return reconcile.Result{}, errors.Wrap(r.kube.Status().Update(ctx, lock), errCannotUpdateStatus)
 		}
 
-		pack, err := NewPackage(&dep.Dependency, addVer, ref)
+		pack, err := NewPackage(dep, repo, addVer)
 		if err != nil {
 			log.Debug(errConstructDependency, "error", err)
 			status.MarkConditions(v1beta1.ResolutionFailed(errors.Wrap(err, errConstructDependency)))
@@ -435,9 +436,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return reconcile.Result{}, errors.Errorf(errFmtMissingDependency, depID)
 	}
 
-	newVer, err := r.findDependencyVersionToUpdate(ctx, ref, installedVersion, dag, n, log)
+	newVer, err := r.findDependencyVersionToUpdate(ctx, n, repo, installedVersion, dag, log)
 	if err != nil {
-		log.Debug(errFindDependencyUpgrade, "error", errors.Wrapf(err, depID, dep.Constraints))
+		log.Debug(errFindDependencyUpgrade, "error", errors.Wrapf(err, depID, dep.GetConstraints()))
 		status.MarkConditions(v1beta1.ResolutionFailed(errors.Wrap(err, errFindDependencyUpgrade)))
 
 		_ = r.kube.Status().Update(ctx, lock)
@@ -451,7 +452,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		format = packageDigestFmt
 	}
 
-	_ = fieldpath.Pave(pkg.Object).SetString("spec.package", fmt.Sprintf(format, ref.String(), newVer))
+	_ = fieldpath.Pave(pkg.Object).SetString("spec.package", fmt.Sprintf(format, repo.String(), newVer))
 
 	if err := r.kube.Update(ctx, pkg); err != nil {
 		log.Debug(errUpdateDependency, "error", err)
@@ -467,22 +468,27 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	return reconcile.Result{}, errors.Wrap(r.kube.Status().Update(ctx, lock), errCannotUpdateStatus)
 }
 
-func (r *Reconciler) findDependencyVersionToInstall(ctx context.Context, dep *v1beta1.Dependency, log logging.Logger, ref name.Reference) (string, error) {
+func (r *Reconciler) findDependencyVersionToInstall(ctx context.Context, repo name.Repository, constraints []string, log logging.Logger) (string, error) {
 	var addVer string
 
-	if digest, err := conregv1.NewHash(dep.Constraints); err == nil {
+	digest, err := findDigestToInstall(constraints)
+	if err != nil {
+		return "", err
+	}
+	if digest != "" {
 		log.Debug("package is pinned to a specific digest, skipping resolution")
-		return digest.String(), nil
+		return digest, nil
 	}
 
-	c, err := semver.NewConstraint(dep.Constraints)
+	andConstraint := strings.Join(constraints, ",")
+	c, err := semver.NewConstraint(andConstraint)
 	if err != nil {
 		log.Debug(errInvalidConstraint, "error", err)
 		return "", errors.Wrap(err, errInvalidConstraint)
 	}
 
 	// ListVersions handles ImageConfig path rewriting and pull secrets.
-	versions, err := r.pkg.ListVersions(ctx, ref.String())
+	versions, err := r.pkg.ListVersions(ctx, repo.String())
 	if err != nil {
 		log.Debug(errFetchTags, "error", err)
 		return "", errors.Wrap(err, errFetchTags)
@@ -517,9 +523,42 @@ func (r *Reconciler) findDependencyVersionToInstall(ctx context.Context, dep *v1
 	return addVer, nil
 }
 
-// findDependencyVersionToUpdate finds a valid version to update the dependency considering the parent constraints.
-func (r *Reconciler) findDependencyVersionToUpdate(ctx context.Context, ref name.Reference, insVer string, dag internaldag.DAG, dep internaldag.Node, log logging.Logger) (string, error) {
-	// If there is a digest in the parent constraints, we need to make sure that all other parent constraints are the same.
+// findDigestToInstall returns the digest to install if all constraints are the
+// same digest. It returns an error if there is at least one digest which is
+// different from other constraints, and an empty digest if all constraints are
+// semver constraints.
+func findDigestToInstall(constraints []string) (string, error) {
+	foundDigest := ""
+	foundVersion := false
+
+	for _, c := range constraints {
+		if d, err := conregv1.NewHash(c); err == nil {
+			if foundDigest != "" && foundDigest != d.String() {
+				return "", errors.Errorf(errFmtDiffDigests, constraints)
+			}
+
+			foundDigest = d.String()
+		} else {
+			foundVersion = true
+		}
+
+		if foundVersion && foundDigest != "" {
+			return "", errors.Errorf(errFmtDiffConstraintTypes, constraints)
+		}
+	}
+
+	if foundDigest != "" {
+		return foundDigest, nil
+	}
+
+	return "", nil
+}
+
+// findDependencyVersionToUpdate finds a valid version to update the dependency
+// considering the parent constraints.
+func (r *Reconciler) findDependencyVersionToUpdate(ctx context.Context, dep internaldag.Node, repo name.Repository, insVer string, dag internaldag.DAG, log logging.Logger) (string, error) {
+	// If there is a digest in the parent constraints, we need to make sure that
+	// all other parent constraints are the same.
 	digest, err := findDigestToUpdate(dag, dep)
 	if err != nil {
 		log.Debug("cannot find digest to update", "error", err)
@@ -532,7 +571,7 @@ func (r *Reconciler) findDependencyVersionToUpdate(ctx context.Context, ref name
 	}
 
 	// ListVersions handles ImageConfig path rewriting and pull secrets.
-	versions, err := r.pkg.ListVersions(ctx, ref.String())
+	versions, err := r.pkg.ListVersions(ctx, repo.String())
 	if err != nil {
 		log.Debug(errFetchTags, "error", err)
 		return "", errors.Wrap(err, errFetchTags)
@@ -557,7 +596,8 @@ func (r *Reconciler) findDependencyVersionToUpdate(ctx context.Context, ref name
 	for i, p := range parents {
 		for _, d := range p.Children() {
 			if d.Identifier() == dep.Identifier() {
-				parentConstraints[i] = d.GetConstraints()
+				// Each parent provides exactly one constraint.
+				parentConstraints[i] = d.GetConstraints()[0]
 				break
 			}
 		}
@@ -626,7 +666,7 @@ func findDigestToUpdate(dag internaldag.DAG, node internaldag.Node) (string, err
 	for i, n := range parents {
 		for _, dep := range n.Children() {
 			if dep.Identifier() == node.Identifier() {
-				parentConstraints[i] = dep.GetConstraints()
+				parentConstraints[i] = dep.GetConstraints()[0]
 			}
 		}
 	}
@@ -749,7 +789,8 @@ func findOutdatedDependency(dag internaldag.DAG, sorted []string) (internaldag.N
 				return nil, err
 			}
 
-			if !compatibleConstraints(existing.GetConstraints(), ch.GetConstraints()) {
+			// existing is a PackageNode, which only ever has one constraint.
+			if !compatibleConstraints(existing.GetConstraints()[0], ch.GetConstraints()) {
 				return ch, nil
 			}
 		}
@@ -761,13 +802,17 @@ func findOutdatedDependency(dag internaldag.DAG, sorted []string) (internaldag.N
 // compatibleConstraints checks whether the installed version constraints are
 // compatible with the wanted version constraints. The installed constraints
 // must be a digest or exact semantic version.
-func compatibleConstraints(installed, wanted string) bool {
-	// NOTE(ezgidemirel): This condition also satisfies digests
-	if installed == wanted {
+func compatibleConstraints(installed string, wanted []string) bool {
+	digest, err := findDigestToInstall(wanted)
+	if err != nil {
+		return false
+	}
+	if digest != "" && digest == installed {
 		return true
 	}
 
-	c, err := semver.NewConstraint(wanted)
+	and := strings.Join(wanted, ",")
+	c, err := semver.NewConstraint(and)
 	if err != nil {
 		return false
 	}
@@ -785,28 +830,29 @@ func compatibleConstraints(installed, wanted string) bool {
 }
 
 // NewPackage creates a new package from the given dependency and version.
-func NewPackage(dep *v1beta1.Dependency, version string, ref name.Reference) (*unstructured.Unstructured, error) {
+func NewPackage(dep *internaldag.DependencyNode, repo name.Repository, version string) (*unstructured.Unstructured, error) {
 	pack := &unstructured.Unstructured{}
-	pack.SetName(xpkg.ToDNSLabel(ref.Context().RepositoryStr()))
+	pack.SetName(xpkg.ToDNSLabel(repo.RepositoryStr()))
 
 	format := packageTagFmt
 	if strings.HasPrefix(version, "sha256:") {
 		format = packageDigestFmt
 	}
 
-	_ = fieldpath.Pave(pack.Object).SetString("spec.package", fmt.Sprintf(format, ref.String(), version))
+	_ = fieldpath.Pave(pack.Object).SetString("spec.package", fmt.Sprintf(format, repo.String(), version))
 
+	pkg := dep.Deps[0]
 	switch {
-	case dep.APIVersion != nil && dep.Kind != nil:
-		pack.SetAPIVersion(*dep.APIVersion)
-		pack.SetKind(*dep.Kind)
-	case ptr.Deref(dep.Type, "") == v1beta1.ConfigurationPackageType:
+	case pkg.APIVersion != nil && pkg.Kind != nil:
+		pack.SetAPIVersion(*pkg.APIVersion)
+		pack.SetKind(*pkg.Kind)
+	case ptr.Deref(pkg.Type, "") == v1beta1.ConfigurationPackageType:
 		pack.SetAPIVersion(v1.ConfigurationGroupVersionKind.GroupVersion().String())
 		pack.SetKind(v1.ConfigurationKind)
-	case ptr.Deref(dep.Type, "") == v1beta1.ProviderPackageType:
+	case ptr.Deref(pkg.Type, "") == v1beta1.ProviderPackageType:
 		pack.SetAPIVersion(v1.ProviderGroupVersionKind.GroupVersion().String())
 		pack.SetKind(v1.ProviderKind)
-	case ptr.Deref(dep.Type, "") == v1beta1.FunctionPackageType:
+	case ptr.Deref(pkg.Type, "") == v1beta1.FunctionPackageType:
 		pack.SetAPIVersion(v1.FunctionGroupVersionKind.GroupVersion().String())
 		pack.SetKind(v1.FunctionKind)
 	default:
