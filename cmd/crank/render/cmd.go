@@ -20,6 +20,8 @@ package render
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -30,6 +32,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
 	"k8s.io/kube-openapi/pkg/spec3"
 
+	"golang.org/x/term"
+
 	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/fieldpath"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/logging"
@@ -37,6 +41,10 @@ import (
 
 	v1 "github.com/crossplane/crossplane/apis/v2/apiextensions/v1"
 	pkgv1 "github.com/crossplane/crossplane/apis/v2/pkg/v1"
+	"github.com/crossplane/crossplane/v2/internal/async"
+	"github.com/crossplane/crossplane/v2/internal/dependency"
+	"github.com/crossplane/crossplane/v2/internal/project"
+	"github.com/crossplane/crossplane/v2/internal/terminal"
 	"github.com/crossplane/crossplane/v2/internal/xcrd"
 )
 
@@ -45,7 +53,7 @@ type Cmd struct {
 	// Arguments.
 	CompositeResource string `arg:"" help:"A YAML file specifying the composite resource (XR) to render."                                        predictor:"yaml_file"              type:"existingfile"`
 	Composition       string `arg:"" help:"A YAML file specifying the Composition to use to render the XR. Must be mode: Pipeline."              predictor:"yaml_file"              type:"existingfile"`
-	Functions         string `arg:"" help:"A YAML file or directory of YAML files specifying the Composition Functions to use to render the XR." predictor:"yaml_file_or_directory" type:"path"`
+	Functions         string `arg:"" help:"A YAML file or directory of YAML files specifying the Composition Functions to use to render the XR." optional:""                        predictor:"yaml_file_or_directory" type:"path"`
 
 	// Flags. Keep them in alphabetical order.
 	ContextFiles           map[string]string `help:"Comma-separated context key-value pairs to pass to the Function pipeline. Values must be files containing JSON/YAML."                           mapsep:""               predictor:"file"`
@@ -60,8 +68,10 @@ type Cmd struct {
 	FunctionCredentials    string            `help:"A YAML file or directory of YAML files specifying credentials to use for Functions to render the XR."                                           placeholder:"PATH"      predictor:"yaml_file_or_directory" type:"path"`
 	FunctionAnnotations    []string          `help:"Override function annotations for all functions. Can be repeated."                                                                              placeholder:"KEY=VALUE" short:"a"`
 
-	Timeout time.Duration `default:"1m"                                                                                                     help:"How long to run before timing out."`
-	XRD     string        `help:"A YAML file specifying the CompositeResourceDefinition (XRD) that defines the XR's schema and properties." optional:""                               placeholder:"PATH" type:"existingfile"`
+	MaxConcurrency uint          `default:"8"                                                                                                    help:"Maximum concurrency for building embedded functions."`
+	ProjectFile    string        `default:"crossplane-project.yaml"                                                                              help:"Path to the project file."                                                                           short:"f" type:"path"`
+	Timeout        time.Duration `default:"1m"                                                                                                   help:"How long to run before timing out."`
+	XRD            string        `help:"A YAML file specifying the CompositeResourceDefinition (XRD) that defines the XR's schema and properties." optional:""                               placeholder:"PATH" type:"existingfile"`
 
 	fs afero.Fs
 }
@@ -166,6 +176,9 @@ func (c *Cmd) AfterApply() error {
 
 // Run render.
 func (c *Cmd) Run(k *kong.Context, log logging.Logger) error { //nolint:gocognit // Only a touch over.
+	ctx, cancel := context.WithTimeout(context.Background(), c.Timeout)
+	defer cancel()
+
 	xr, err := LoadCompositeResource(c.fs, c.CompositeResource)
 	if err != nil {
 		return errors.Wrapf(err, "cannot load composite resource from %q", c.CompositeResource)
@@ -208,9 +221,9 @@ func (c *Cmd) Run(k *kong.Context, log logging.Logger) error { //nolint:gocognit
 		return errors.Errorf("render only supports Composition Function pipelines: Composition %q must use spec.mode: Pipeline", comp.GetName())
 	}
 
-	fns, err := LoadFunctions(c.fs, c.Functions)
+	fns, err := c.loadFunctions(ctx, log)
 	if err != nil {
-		return errors.Wrapf(err, "cannot load functions from %q", c.Functions)
+		return err
 	}
 
 	// Apply global annotation overrides to each function
@@ -289,9 +302,6 @@ func (c *Cmd) Run(k *kong.Context, log logging.Logger) error { //nolint:gocognit
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), c.Timeout)
-	defer cancel()
-
 	out, err := Render(ctx, log, Inputs{
 		CompositeResource:   xr,
 		Composition:         comp,
@@ -365,6 +375,66 @@ func (c *Cmd) Run(k *kong.Context, log logging.Logger) error { //nolint:gocognit
 	}
 
 	return nil
+}
+
+func (c *Cmd) loadFunctions(ctx context.Context, log logging.Logger) ([]pkgv1.Function, error) {
+	// If a functions file was explicitly provided, use it directly.
+	if c.Functions != "" {
+		fns, err := LoadFunctions(c.fs, c.Functions)
+		if err != nil {
+			return nil, errors.Wrapf(err, "cannot load functions from %q", c.Functions)
+		}
+		return fns, nil
+	}
+
+	// Check if we're in a project.
+	projDir, err := filepath.Abs(filepath.Dir(c.ProjectFile))
+	if err != nil {
+		return nil, errors.Wrap(err, "cannot determine project directory")
+	}
+
+	projFilePath := c.ProjectFile
+	if !filepath.IsAbs(projFilePath) {
+		projFilePath = filepath.Join(projDir, filepath.Base(c.ProjectFile))
+	}
+
+	if _, err := os.Stat(projFilePath); err != nil {
+		return nil, errors.New("functions argument is required when not in a project")
+	}
+
+	// Project mode: load functions from the project file.
+	log.Debug("Loading functions from project", "project-file", projFilePath)
+
+	projFS := afero.NewOsFs()
+	proj, err := project.Parse(projFS, projFilePath)
+	if err != nil {
+		return nil, errors.Wrapf(err, "cannot parse project file %q", projFilePath)
+	}
+
+	pretty := term.IsTerminal(int(os.Stderr.Fd()))
+	sp := terminal.NewSpinnerPrinter(os.Stderr, pretty)
+
+	depMgr := dependency.NewManager(proj, projFS)
+
+	var externalFns []pkgv1.Function
+	if err := sp.WrapWithSuccessSpinner("Resolving function dependencies", func() error {
+		var resolveErr error
+		externalFns, resolveErr = project.LoadProjectFunctions(depMgr, proj)
+		return resolveErr
+	}); err != nil {
+		return nil, errors.Wrap(err, "cannot load project functions")
+	}
+
+	var embeddedFns []pkgv1.Function
+	if err := sp.WrapAsyncWithSuccessSpinners(func(ch async.EventChannel) error {
+		var buildErr error
+		embeddedFns, buildErr = project.BuildAndPushEmbeddedFunctions(ctx, proj, projFS, projDir, c.MaxConcurrency, ch)
+		return buildErr
+	}); err != nil {
+		return nil, errors.Wrap(err, "cannot build embedded functions")
+	}
+
+	return append(externalFns, embeddedFns...), nil
 }
 
 // OverrideFunctionAnnotations applies annotation overrides from flags to

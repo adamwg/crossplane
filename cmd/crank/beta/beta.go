@@ -20,20 +20,30 @@ limitations under the License.
 package beta
 
 import (
+	"github.com/crossplane/crossplane/v2/cmd/crank/beta/composition"
 	"github.com/crossplane/crossplane/v2/cmd/crank/beta/convert"
+	"github.com/crossplane/crossplane/v2/cmd/crank/beta/dependency"
+	"github.com/crossplane/crossplane/v2/cmd/crank/beta/function"
+	"github.com/crossplane/crossplane/v2/cmd/crank/beta/project"
 	"github.com/crossplane/crossplane/v2/cmd/crank/beta/top"
 	"github.com/crossplane/crossplane/v2/cmd/crank/beta/trace"
 	"github.com/crossplane/crossplane/v2/cmd/crank/beta/validate"
+	"github.com/crossplane/crossplane/v2/cmd/crank/beta/xrd"
 )
 
 // Cmd contains beta commands.
 type Cmd struct {
 	// Subcommands and flags will appear in the CLI help output in the same
 	// order they're specified here. Keep them in alphabetical order.
-	Convert  convert.Cmd  `cmd:"" help:"Convert a Crossplane resource to a newer version or kind."`
-	Top      top.Cmd      `cmd:"" help:"Display resource (CPU/memory) usage by Crossplane related pods."`
-	Trace    trace.Cmd    `cmd:"" help:"Trace a Crossplane resource to get a detailed output of its relationships, helpful for troubleshooting."`
-	Validate validate.Cmd `cmd:"" help:"Validate Crossplane resources."`
+	Composition composition.Cmd `cmd:"" help:"Work with Compositions."`
+	Convert     convert.Cmd     `cmd:"" help:"Convert a Crossplane resource to a newer version or kind."`
+	Dependency  dependency.Cmd  `cmd:"" help:"Manage project dependencies and generated schemas."`
+	Function    function.Cmd    `cmd:"" help:"Work with Functions."`
+	Project     project.Cmd     `cmd:"" help:"Work with Crossplane projects."`
+	Top         top.Cmd         `cmd:"" help:"Display resource (CPU/memory) usage by Crossplane related pods."`
+	Trace       trace.Cmd       `cmd:"" help:"Trace a Crossplane resource to get a detailed output of its relationships, helpful for troubleshooting."`
+	Validate    validate.Cmd    `cmd:"" help:"Validate Crossplane resources."`
+	XRD         xrd.Cmd         `cmd:"" help:"Work with CompositeResourceDefinitions (XRDs)."`
 }
 
 // Help output for crossplane beta.

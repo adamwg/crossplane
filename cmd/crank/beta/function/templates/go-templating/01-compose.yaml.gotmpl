@@ -1,0 +1,21 @@
+{{- if .ModelIndexPath -}}
+# code: language=yaml
+# yaml-language-server: $schema={{- .ModelIndexPath }}
+{{ end -}}
+{{ print `
+# Write your composed resources here. You can use any of the features described
+# in this documentation:
+# https://github.com/crossplane-contrib/function-go-templating?tab=readme-ov-file#using-this-function
+#
+# Example:
+#
+# ---
+# apiVersion: s3.aws.upbound.io/v1beta1
+# kind: Bucket
+# metadata:
+#   annotations:
+#     {{ setResourceNameAnnotation "bucket" }}
+# spec:
+#   forProvider:
+#     region: "{{ $xr.spec.parameters.region }}"
+` }}
