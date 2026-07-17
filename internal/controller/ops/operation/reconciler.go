@@ -43,6 +43,7 @@ import (
 	xpv2 "github.com/crossplane/crossplane/apis/v2/core/v2"
 	"github.com/crossplane/crossplane/apis/v2/ops/v1alpha1"
 	pkgmetav1 "github.com/crossplane/crossplane/apis/v2/pkg/meta/v1"
+	pkgv1 "github.com/crossplane/crossplane/apis/v2/pkg/v1"
 	xcomposite "github.com/crossplane/crossplane/v2/internal/controller/apiextensions/composite"
 	"github.com/crossplane/crossplane/v2/internal/controller/apiextensions/composite/step"
 	"github.com/crossplane/crossplane/v2/internal/xfn"
@@ -279,7 +280,23 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		// Add step metadata to context for use by downstream components like InspectedRunner.
 		stepCtx := step.ContextWithStepMetaForOperations(ctx, traceID, fn.Step, int32(stepIndex), op.GetName(), string(op.GetUID())) //nolint:gosec // int32 conversion is safe here, we know the number of steps won't exceed int32.
 
-		rsp, err := r.pipeline.RunFunction(stepCtx, fn.FunctionRef.Name, req)
+		// Resolve the package reference for this step. Operations reference
+		// functions by the name of an installed Function; the runner routes to
+		// a FunctionRevision by package, so resolve the name to its package.
+		f := &pkgv1.Function{}
+		if err := r.client.Get(ctx, client.ObjectKey{Name: fn.FunctionRef.Name}, f); err != nil {
+			op.Status.Failures++
+
+			log.Debug("Cannot get Function resource", "error", err, "failures", op.Status.Failures)
+			err = errors.Wrapf(err, "failed to get Function resource %q for pipeline step %q", fn.FunctionRef.Name, fn.Step)
+			r.record.Event(op, event.Warning(reasonFunctionInvocation, err))
+			status.MarkConditions(xpv2.ReconcileError(err))
+			_ = r.client.Status().Update(ctx, op)
+
+			return reconcile.Result{}, err
+		}
+
+		rsp, err := r.pipeline.RunFunction(stepCtx, f.Spec.Package, req)
 		if err != nil {
 			op.Status.Failures++
 

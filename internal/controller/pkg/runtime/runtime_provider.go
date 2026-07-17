@@ -38,6 +38,7 @@ import (
 const (
 	errDeleteProviderDeployment               = "cannot delete provider package deployment"
 	errDeleteProviderService                  = "cannot delete provider package service"
+	errDeleteProviderSecret                   = "cannot delete provider package secret"
 	errApplyProviderDeployment                = "cannot apply provider package deployment"
 	errApplyProviderSecret                    = "cannot apply provider package secret"
 	errApplyProviderSA                        = "cannot apply provider package service account"
@@ -178,6 +179,15 @@ func (h *ProviderHooks) Deactivate(ctx context.Context, pr v1.PackageRevisionWit
 		return errors.Wrap(err, errDeleteProviderService)
 	}
 
+	// Delete the TLS cert secrets if they exist. They are named after the
+	// revision.
+	if err := h.client.Delete(ctx, build.TLSServerSecret()); resource.IgnoreNotFound(err) != nil {
+		return errors.Wrap(err, errDeleteProviderSecret)
+	}
+	if err := h.client.Delete(ctx, build.TLSClientSecret()); resource.IgnoreNotFound(err) != nil {
+		return errors.Wrap(err, errDeleteProviderSecret)
+	}
+
 	// NOTE(turkenh): We don't delete the service account here because it might
 	// be used by other package revisions, e.g. user might have specified a
 	// service account name in the runtime config. This should not be a problem
@@ -185,8 +195,8 @@ func (h *ProviderHooks) Deactivate(ctx context.Context, pr v1.PackageRevisionWit
 	// them, and they will be garbage collected when the package revision is
 	// deleted if they are not used by any other package revisions.
 
-	// NOTE(phisco): Service and TLS secrets are created per package. Therefore,
-	// we're not deleting them here.
+	// NOTE(phisco): Service is created per package. Therefore, we're not
+	// deleting it here.
 	return nil
 }
 

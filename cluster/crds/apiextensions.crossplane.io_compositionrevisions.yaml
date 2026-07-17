@@ -151,11 +151,20 @@ spec:
                         execute.
                       properties:
                         name:
-                          description: Name of the referenced Function.
+                          description: |-
+                            Name of the referenced Function. Must refer to an existing installed
+                            function.
                           type: string
-                      required:
-                      - name
+                        package:
+                          description: |-
+                            Package is a fully-qualified OCI reference to a function package. The
+                            function will be automatically installed if necessary.
+                          type: string
                       type: object
+                      x-kubernetes-validations:
+                      - message: exactly one of name or package must be provided
+                        rule: (has(self.name) && !has(self.package)) || (!has(self.name)
+                          && has(self.package))
                     input:
                       description: |-
                         Input is an optional, arbitrary Kubernetes resource (i.e. a resource

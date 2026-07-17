@@ -62,6 +62,7 @@ type PipelineStep struct {
 
 	// FunctionRef is a reference to the function this step should
 	// execute.
+	// +kubebuilder:validation:XValidation:rule="(has(self.name) && !has(self.package)) || (!has(self.name) && has(self.package))",message="exactly one of name or package must be provided"
 	FunctionRef FunctionReference `json:"functionRef"`
 
 	// Input is an optional, arbitrary Kubernetes resource (i.e. a resource
@@ -86,11 +87,18 @@ type PipelineStep struct {
 	Requirements *FunctionRequirements `json:"requirements,omitempty"`
 }
 
-// A FunctionReference references a function that may be used in a
-// Composition pipeline.
+// A FunctionReference references a function that may be used in a Composition
+// pipeline. Exactly one of Name or Package must be set.
 type FunctionReference struct {
-	// Name of the referenced Function.
-	Name string `json:"name"`
+	// Name of the referenced Function. Must refer to an existing installed
+	// function.
+	// +optional
+	Name string `json:"name,omitempty"`
+
+	// Package is a fully-qualified OCI reference to a function package. The
+	// function will be automatically installed if necessary.
+	// +optional
+	Package string `json:"package,omitempty"`
 }
 
 // FunctionCredentials are optional credentials that a function

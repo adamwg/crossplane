@@ -40,11 +40,17 @@ import (
 
 	xpv2 "github.com/crossplane/crossplane/apis/v2/core/v2"
 	"github.com/crossplane/crossplane/apis/v2/ops/v1alpha1"
+	pkgv1 "github.com/crossplane/crossplane/apis/v2/pkg/v1"
 	"github.com/crossplane/crossplane/v2/internal/xfn"
 	fnv1 "github.com/crossplane/crossplane/v2/proto/fn/v1"
 )
 
 func TestReconcile(t *testing.T) {
+	const (
+		functionCool    = "function-cool"
+		functionCoolPkg = "xpkg.crossplane.io/example/function-cool:v1.0.0"
+	)
+
 	type params struct {
 		client client.Client
 		opts   []ReconcilerOption
@@ -167,6 +173,11 @@ func TestReconcile(t *testing.T) {
 			params: params{
 				client: &test.MockClient{
 					MockGet: test.NewMockGetFn(nil, func(obj client.Object) error {
+						if f, ok := obj.(*pkgv1.Function); ok {
+							f.SetName(functionCool)
+							f.Spec.Package = functionCoolPkg
+							return nil
+						}
 						if _, ok := obj.(*corev1.Secret); ok {
 							return errors.New("boom")
 						}
@@ -177,7 +188,7 @@ func TestReconcile(t *testing.T) {
 									{
 										Step: "get-creds",
 										FunctionRef: v1alpha1.FunctionReference{
-											Name: "function-cool",
+											Name: functionCool,
 										},
 										Credentials: []v1alpha1.FunctionCredentials{
 											{
@@ -215,6 +226,11 @@ func TestReconcile(t *testing.T) {
 			params: params{
 				client: &test.MockClient{
 					MockGet: test.NewMockGetFn(nil, func(obj client.Object) error {
+						if f, ok := obj.(*pkgv1.Function); ok {
+							f.SetName(functionCool)
+							f.Spec.Package = functionCoolPkg
+							return nil
+						}
 						if _, ok := obj.(*corev1.Secret); ok {
 							return errors.New("boom")
 						}
@@ -225,7 +241,7 @@ func TestReconcile(t *testing.T) {
 									{
 										Step: "get-creds",
 										FunctionRef: v1alpha1.FunctionReference{
-											Name: "function-cool",
+											Name: functionCool,
 										},
 									},
 								},
@@ -256,6 +272,11 @@ func TestReconcile(t *testing.T) {
 			params: params{
 				client: &test.MockClient{
 					MockGet: test.NewMockGetFn(nil, func(obj client.Object) error {
+						if f, ok := obj.(*pkgv1.Function); ok {
+							f.SetName(functionCool)
+							f.Spec.Package = functionCoolPkg
+							return nil
+						}
 						if _, ok := obj.(*corev1.Secret); ok {
 							return errors.New("boom")
 						}
@@ -266,7 +287,7 @@ func TestReconcile(t *testing.T) {
 									{
 										Step: "get-creds",
 										FunctionRef: v1alpha1.FunctionReference{
-											Name: "function-cool",
+											Name: functionCool,
 										},
 									},
 								},
@@ -305,6 +326,11 @@ func TestReconcile(t *testing.T) {
 			params: params{
 				client: &test.MockClient{
 					MockGet: test.NewMockGetFn(nil, func(obj client.Object) error {
+						if f, ok := obj.(*pkgv1.Function); ok {
+							f.SetName(functionCool)
+							f.Spec.Package = functionCoolPkg
+							return nil
+						}
 						if _, ok := obj.(*corev1.Secret); ok {
 							return errors.New("boom")
 						}
@@ -315,7 +341,7 @@ func TestReconcile(t *testing.T) {
 									{
 										Step: "get-creds",
 										FunctionRef: v1alpha1.FunctionReference{
-											Name: "function-cool",
+											Name: functionCool,
 										},
 									},
 								},
@@ -405,7 +431,7 @@ func TestReconcile(t *testing.T) {
 									{
 										Step: "requires-resources",
 										FunctionRef: v1alpha1.FunctionReference{
-											Name: "function-cool",
+											Name: functionCool,
 										},
 										Requirements: &v1alpha1.FunctionRequirements{
 											RequiredResources: []v1alpha1.RequiredResourceSelector{
@@ -446,6 +472,11 @@ func TestReconcile(t *testing.T) {
 			params: params{
 				client: &test.MockClient{
 					MockGet: test.NewMockGetFn(nil, func(obj client.Object) error {
+						if f, ok := obj.(*pkgv1.Function); ok {
+							f.SetName(functionCool)
+							f.Spec.Package = functionCoolPkg
+							return nil
+						}
 						if _, ok := obj.(*corev1.Secret); ok {
 							return errors.New("boom")
 						}
@@ -456,7 +487,7 @@ func TestReconcile(t *testing.T) {
 									{
 										Step: "get-creds",
 										FunctionRef: v1alpha1.FunctionReference{
-											Name: "function-cool",
+											Name: functionCool,
 										},
 									},
 								},

@@ -279,10 +279,6 @@ func (b *DeploymentRuntimeBuilder) Service(overrides ...ServiceOverride) *corev1
 	var allOverrides []ServiceOverride
 
 	allOverrides = append(allOverrides,
-		// Optional defaults, will be used only if the runtime config does not
-		// specify them.
-		ServiceWithOptionalName(b.packageName()),
-
 		// Overrides that we are opinionated about.
 		ServiceWithNamespace(b.namespace),
 		ServiceWithOwnerReferences([]metav1.OwnerReference{meta.AsController(meta.TypedReferenceTo(b.revision, b.revision.GetObjectKind().GroupVersionKind()))}),
@@ -291,6 +287,10 @@ func (b *DeploymentRuntimeBuilder) Service(overrides ...ServiceOverride) *corev1
 	// We append the overrides passed to the function last so that they can
 	// override the above ones.
 	allOverrides = append(allOverrides, overrides...)
+
+	// If neither the template nor the caller provided a name for the service,
+	// default to the package name.
+	allOverrides = append(allOverrides, ServiceWithOptionalName(b.packageName()))
 
 	for _, o := range allOverrides {
 		o(svc)
