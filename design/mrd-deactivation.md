@@ -39,7 +39,10 @@ policy change into one provider restart.
 
 * A type that no MRAP asks for has its CRD removed, without operator action.
 * A bulk MRAP edit that deactivates many types costs one provider restart per
-  provider, not one per type.
+  provider, not one per type — for the types that are empty when the policy
+  changes. A type still in use at that moment is a *straggler* and costs a
+  further restart when it drains; see *Stragglers* under
+  [the package manager](#package-manager).
 * Nothing is destroyed as a side effect of a partially-applied or failing
   policy change.
 * No new policy API. Deactivation follows from the MRAPs alone.
@@ -266,7 +269,11 @@ Conditions:
 
 It does not block the removal of its siblings. The rest of the batch is
 removed, and this one follows on its own once the last instance is gone. The
-user does not need to come back and trigger anything.
+user does not need to come back and trigger anything — but each type that
+drains after the batch has gone through costs its own provider restart. A team
+that cares about availability drains first and narrows the policy second, which
+keeps the whole change to a single restart. See *Stragglers* under
+[the package manager](#package-manager).
 
 **4. One restart, then the CRDs are gone.** Once the MRAP has fully reconciled,
 the provider is scaled to zero, the empty types' CRDs are deleted, and it comes
@@ -463,6 +470,42 @@ finish draining, will have created instances in that time. The read catches
 that and narrows the genuine race to the interval between the read and the
 delete. [Unserved versions](#open-questions) would narrow it further.
 
+**Stragglers.** A type that still has instances when its last activator goes
+away does not travel with the batch. It sits in `PendingRemoval` while the
+batch's window opens, runs and closes around it, and becomes eligible only when
+its instance count reaches zero — which may be minutes or months later, and is
+driven by whoever is deleting the instances rather than by anything Crossplane
+controls.
+
+Such a type is handled individually. The removal set is recomputed from scratch
+on each reconcile of the revision, so a drained straggler simply appears in it,
+finds its implicated MRAPs long since settled, and opens a window of its own:
+another scale to zero, one CRD deleted, another scale up. **The cost is one
+additional provider restart per straggler**, or per group of stragglers that
+happen to be empty at the same reconcile — draining several types together
+still batches them, because the set is a snapshot of what is eligible now, not
+a queue built when the policy changed.
+
+This is accepted rather than solved. The alternative is to hold the batch open
+until every straggler drains, which turns a bounded number of restarts into an
+unbounded delay before any CRD is removed, and makes one undrained type block
+every other type on the provider — the thing the batch was meant to avoid. A
+debounce or coalescing window would only move the trade-off around; see [Open
+questions](#open-questions).
+
+The remedy is procedural and belongs in the documentation: **delete the
+instances first, then narrow the policy.** A user who does that has no
+stragglers and pays exactly one restart. A user who does not still converges on
+the right end state, and pays a restart each time a type drains. Neither path
+loses data or leaves a type half-removed; the difference is availability, and
+it is visible in advance — the `PendingRemoval` messages name every type that
+is going to straggle, before any window opens.
+
+`safe-stop` ([Future work](#future-work-safe-stop)) removes the cost entirely
+rather than mitigating it: with no scale-to-zero in the window, a straggler's
+removal is just a CRD deletion, and stragglers stop being a category worth
+naming.
+
 **Waking up.** When an MRAP settles, nothing about any MRD changes — its
 activator writes all landed *before* `observedGeneration` advanced, so those
 MRD events have already fired and found the window shut. The revision
@@ -588,6 +631,12 @@ manufacture for a pinned type.
   later — but they are a second way to say a similar thing.
 * **RBAC teardown ordering** relative to CRD deletion, given that the provider
   is down and cannot be the one to notice.
+* **Whether stragglers deserve a coalescing delay.** Holding a drained
+  straggler for a short period before opening its window would batch a cluster
+  that is draining several types by hand into fewer restarts, at the cost of a
+  tunable nobody can set correctly and a delay on the common case of a single
+  straggler. The alternative — an operator-triggered "remove everything that is
+  ready now" — reintroduces the manual step this design set out to avoid.
 
 ## Future work: `safe-stop`
 
