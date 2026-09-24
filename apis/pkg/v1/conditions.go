@@ -44,6 +44,11 @@ const (
 	// zero, awaiting activation of the first ManagedResourceDefinition owned
 	// by the revision.
 	TypeRuntimeActive xpv2.ConditionType = "RuntimeActive"
+
+	// TypeDeactivating indicates that the package manager is in the middle of
+	// a ManagedResourceDefinition removal window: stopping the runtime,
+	// deleting CRDs, and bringing the runtime back up.
+	TypeDeactivating xpv2.ConditionType = "Deactivating"
 )
 
 // Reasons a package is or is not installed.
@@ -56,7 +61,59 @@ const (
 	ReasonUnknownHealth      xpv2.ConditionReason = "UnknownPackageRevisionHealth"
 	ReasonActiveRuntime      xpv2.ConditionReason = "ActiveRuntime"
 	ReasonAwaitingActivation xpv2.ConditionReason = "AwaitingActivation"
+	ReasonDeactivating       xpv2.ConditionReason = "Deactivating"
 )
+
+// Reasons a package revision is deactivating managed resource definitions.
+const (
+	// ReasonAwaitingPolicy means removals are pending but at least one
+	// implicated activation policy has not finished reconciling.
+	ReasonAwaitingPolicy xpv2.ConditionReason = "AwaitingPolicy"
+
+	// ReasonStopping means the runtime is being scaled to zero.
+	ReasonStopping xpv2.ConditionReason = "Stopping"
+
+	// ReasonRemovingCRDs means the runtime is down and CRDs are being deleted.
+	ReasonRemovingCRDs xpv2.ConditionReason = "RemovingCRDs"
+
+	// ReasonNotDeactivating means there is nothing to remove.
+	ReasonNotDeactivating xpv2.ConditionReason = "Idle"
+)
+
+// Deactivating indicates that the package manager is working through a
+// ManagedResourceDefinition removal window.
+func Deactivating(reason xpv2.ConditionReason) xpv2.Condition {
+	return xpv2.Condition{
+		Type:               TypeDeactivating,
+		Status:             corev1.ConditionTrue,
+		LastTransitionTime: metav1.Now(),
+		Reason:             reason,
+	}
+}
+
+// NotDeactivating indicates that no ManagedResourceDefinition removal is in
+// flight.
+func NotDeactivating() xpv2.Condition {
+	return xpv2.Condition{
+		Type:               TypeDeactivating,
+		Status:             corev1.ConditionFalse,
+		LastTransitionTime: metav1.Now(),
+		Reason:             ReasonNotDeactivating,
+	}
+}
+
+// RuntimeDeactivating indicates that the runtime is deliberately scaled to
+// zero for the length of a removal window. It is the third state of the
+// RuntimeActive latch: not "awaiting its first activation", but "stopped on
+// purpose, do not scale me back up yet".
+func RuntimeDeactivating() xpv2.Condition {
+	return xpv2.Condition{
+		Type:               TypeRuntimeActive,
+		Status:             corev1.ConditionFalse,
+		LastTransitionTime: metav1.Now(),
+		Reason:             ReasonDeactivating,
+	}
+}
 
 // Unpacking indicates that the package manager is waiting for a package
 // revision to be unpacked.

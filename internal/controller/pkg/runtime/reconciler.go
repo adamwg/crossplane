@@ -19,6 +19,7 @@ package runtime
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -53,6 +54,15 @@ import (
 
 const (
 	reconcileTimeout = 3 * time.Minute
+
+	// deactivationPollInterval is how often we re-check a removal window that
+	// is waiting on the runtime to stop or on the MRD controller to delete the
+	// CRDs.
+	deactivationPollInterval = 5 * time.Second
+
+	// stragglerPollInterval is how often we re-check a type that has lost its
+	// last activator but still has instances.
+	stragglerPollInterval = 1 * time.Minute
 )
 
 const (
@@ -145,6 +155,14 @@ func WithDeploymentSelectorMigrator(m DeploymentSelectorMigrator) ReconcilerOpti
 	}
 }
 
+// WithUncachedReader specifies a reader that goes straight to the API server,
+// for the live re-check a removal window makes with the runtime stopped.
+func WithUncachedReader(rd client.Reader) ReconcilerOption {
+	return func(r *Reconciler) {
+		r.uncached = rd
+	}
+}
+
 // WithConfigStore specifies how the Reconciler should access image config store.
 func WithConfigStore(c xpkg.ConfigStore) ReconcilerOption {
 	return func(r *Reconciler) {
@@ -154,7 +172,12 @@ func WithConfigStore(c xpkg.ConfigStore) ReconcilerOption {
 
 // Reconciler reconciles packages.
 type Reconciler struct {
-	client         client.Client
+	client client.Client
+
+	// uncached reads straight from the API server, for the live re-check the
+	// removal window makes with the runtime stopped.
+	uncached client.Reader
+
 	log            logging.Logger
 	runtimeHook    Hooks
 	record         event.Recorder
@@ -188,8 +211,17 @@ func SetupProviderRevision(mgr ctrl.Manager, o controller.Options) error {
 	}
 
 	// Watch MRDs so we can scale up a safe-start provider's runtime the moment
-	// its first MRD becomes active, without waiting for the next scheduled sync.
-	cb = cb.Watches(&extv1alpha1.ManagedResourceDefinition{}, EnqueueProviderRevisionsForMRDs(log), builder.WithPredicates(mrdActivated()))
+	// its first MRD becomes active, and scale it down again when one becomes a
+	// candidate for removal.
+	cb = cb.Watches(&extv1alpha1.ManagedResourceDefinition{}, EnqueueProviderRevisionsForMRDs(log), builder.WithPredicates(mrdActivationChanged()))
+
+	// Watch MRAPs too. When a policy settles, nothing about any MRD changes -
+	// its activator writes all landed before observedGeneration advanced, so
+	// those MRD events have already fired and found the window shut. The
+	// policy's own status update is the only signal left. Its patterns aren't
+	// evaluated here and it carries no owner reference to a revision, so the
+	// handler can't narrow the fan-out - but revisions number in the handful.
+	cb = cb.Watches(&extv1alpha1.ManagedResourceActivationPolicy{}, EnqueueProviderRevisionsForMRAPs(mgr.GetClient(), log))
 
 	r := NewReconciler(mgr,
 		WithNewPackageRevisionWithRuntimeFn(nr),
@@ -198,6 +230,7 @@ func SetupProviderRevision(mgr ctrl.Manager, o controller.Options) error {
 		WithNamespace(o.Namespace),
 		WithServiceAccount(o.ServiceAccount),
 		WithRuntimeHooks(NewProviderHooks(mgr.GetClient())),
+		WithUncachedReader(mgr.GetAPIReader()),
 		WithFeatureFlags(o.Features),
 		WithDeploymentSelectorMigrator(NewDeletingDeploymentSelectorMigrator(mgr.GetClient(), log)),
 		WithConfigStore(xpkg.NewImageConfigStore(mgr.GetClient(), o.Namespace)),
@@ -346,7 +379,26 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return reconcile.Result{}, err
 	}
 
+	// Work out whether any of our types are queued for removal, and whether
+	// every policy implicated in that removal has finished reconciling.
+	batch, err := r.planRemoval(ctx, ownedMRDs)
+	if err != nil {
+		status.MarkConditions(v1.RuntimeUnhealthy().WithMessage(err.Error()))
+
+		_ = r.client.Status().Update(ctx, pr)
+		r.record.Event(pr, event.Warning(reasonDeactivate, err))
+
+		return reconcile.Result{}, err
+	}
+
 	opts = append(opts, BuilderWithMRDs(ownedMRDs))
+	if batch.phase == phaseWindowOpen {
+		// Stop the runtime for the length of the window. A provider that keeps
+		// watching a type whose CRD has been removed errors continuously, and
+		// controller-runtime has no supported way to stop a controller and
+		// tear down its informers - so we stop the process instead.
+		opts = append(opts, BuilderDeactivating())
+	}
 	builder := NewDeploymentRuntimeBuilder(pr, r.namespace, opts...)
 
 	// Deactivate revision if it is inactive.
@@ -430,13 +482,124 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		r.record.Event(pr, event.Normal(reasonSync, "Successfully configured package revision"))
 	}
 
-	if builder.AwaitingActivation() {
-		status.MarkConditions(v1.RuntimeHealthy(), v1.RuntimeAwaitingActivation().WithMessage("Package runtime is scaled to zero; awaiting the first ManagedResourceDefinition to be activated"))
-	} else {
-		status.MarkConditions(v1.RuntimeHealthy(), v1.RuntimeActive())
+	res, err := r.markRuntimeState(ctx, log, pr, builder, batch)
+	if err != nil {
+		status.MarkConditions(v1.RuntimeUnhealthy().WithMessage(err.Error()))
+
+		_ = r.client.Status().Update(ctx, pr)
+		r.record.Event(pr, event.Warning(reasonDeactivate, err))
+
+		return reconcile.Result{}, err
 	}
 
-	return reconcile.Result{Requeue: false}, errors.Wrap(r.client.Status().Update(ctx, pr), errUpdateStatus)
+	return res, errors.Wrap(r.client.Status().Update(ctx, pr), errUpdateStatus)
+}
+
+// markRuntimeState reports where the runtime is - up, scaled to zero awaiting
+// its first activation, or part way through a removal window - and drives the
+// window when one is open.
+func (r *Reconciler) markRuntimeState(ctx context.Context, log logging.Logger, pr v1.PackageRevisionWithRuntime, build *DeploymentRuntimeBuilder, batch removalBatch) (reconcile.Result, error) {
+	status := r.conditions.For(pr)
+
+	if batch.phase == phaseWindowOpen {
+		return r.removalWindow(ctx, log, pr, build, batch)
+	}
+
+	// A straggler - a type that lost its last activator but still has instances
+	// - becomes eligible only when whoever is draining it finishes, which
+	// nothing here can observe. Poll for it.
+	//
+	// TODO(POC): the design instead widens the MRD watch to carry the "instance
+	// count reached zero" edge, which needs a watch on the instances rather
+	// than on the MRD.
+	res := reconcile.Result{Requeue: false}
+	if batch.stragglers > 0 {
+		res = reconcile.Result{RequeueAfter: stragglerPollInterval}
+	}
+
+	switch {
+	case batch.phase == phaseAwaitingPolicy:
+		status.MarkConditions(
+			v1.RuntimeHealthy(),
+			v1.RuntimeActive(),
+			v1.Deactivating(v1.ReasonAwaitingPolicy).WithMessage(fmt.Sprintf("%d ManagedResourceDefinitions queued for removal; %s", len(batch.mrds), batch.message)),
+		)
+
+	case build.AwaitingActivation():
+		status.MarkConditions(v1.RuntimeHealthy(), v1.RuntimeAwaitingActivation().WithMessage("Package runtime is scaled to zero; awaiting the first ManagedResourceDefinition to be activated"))
+		markNotDeactivating(status, pr)
+
+	case batch.stragglers > 0:
+		status.MarkConditions(
+			v1.RuntimeHealthy(),
+			v1.RuntimeActive(),
+			v1.Deactivating(v1.ReasonAwaitingPolicy).WithMessage(fmt.Sprintf("%d ManagedResourceDefinitions are queued for removal but still have instances", batch.stragglers)),
+		)
+
+	default:
+		status.MarkConditions(v1.RuntimeHealthy(), v1.RuntimeActive())
+		markNotDeactivating(status, pr)
+	}
+
+	return res, nil
+}
+
+// markNotDeactivating closes out a removal window that has finished. It only
+// writes the condition when one was open, so that a revision that has never
+// deactivated anything doesn't carry a permanent "Deactivating: False".
+func markNotDeactivating(status conditions.ConditionSet, pr v1.PackageRevisionWithRuntime) {
+	if pr.GetCondition(v1.TypeDeactivating).Status == corev1.ConditionTrue {
+		status.MarkConditions(v1.NotDeactivating())
+	}
+}
+
+// removalWindow runs the window once every implicated policy has settled: wait
+// for the runtime to actually be down, re-check the batch against a live read,
+// and release the survivors for the MRD controller to tear down.
+//
+// It does not need to sequence the scale-up. Once the CRDs are gone the MRDs
+// drop out of the removal set, the next reconcile plans an idle batch, and the
+// Deployment goes back to its configured replica count.
+func (r *Reconciler) removalWindow(ctx context.Context, log logging.Logger, pr v1.PackageRevisionWithRuntime, build *DeploymentRuntimeBuilder, batch removalBatch) (reconcile.Result, error) {
+	status := r.conditions.For(pr)
+
+	// The post-establish hook has already applied the Deployment at zero
+	// replicas. Wait for the pods to actually be gone before we delete
+	// anything: the point of the stop is that nothing is reconciling the type
+	// when its CRD disappears.
+	sa := build.ServiceAccount()
+	want := build.Deployment(sa.Name)
+
+	d := &appsv1.Deployment{}
+	if err := r.client.Get(ctx, types.NamespacedName{Namespace: want.GetNamespace(), Name: want.GetName()}, d); err != nil {
+		return reconcile.Result{}, errors.Wrap(resource.IgnoreNotFound(err), "cannot get package runtime deployment")
+	}
+
+	if d.Status.Replicas > 0 {
+		log.Debug("Waiting for package runtime to stop before removing CRDs", "replicas", d.Status.Replicas)
+		status.MarkConditions(
+			v1.RuntimeHealthy(),
+			v1.RuntimeDeactivating(),
+			v1.Deactivating(v1.ReasonStopping).WithMessage(fmt.Sprintf("Stopping runtime before removing %d CRDs; %d replicas remain", len(batch.mrds), d.Status.Replicas)),
+		)
+
+		return reconcile.Result{RequeueAfter: deactivationPollInterval}, nil
+	}
+
+	released, err := r.release(ctx, batch)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+
+	log.Info("Runtime stopped; releasing ManagedResourceDefinitions for removal", "count", released)
+
+	status.MarkConditions(
+		v1.RuntimeHealthy(),
+		v1.RuntimeDeactivating(),
+		v1.Deactivating(v1.ReasonRemovingCRDs).WithMessage(fmt.Sprintf("Runtime stopped; deleting %d CRDs", released)),
+	)
+
+	return reconcile.Result{RequeueAfter: deactivationPollInterval}, nil
 }
 
 // ownedMRDs returns the ManagedResourceDefinitions controlled by pr.

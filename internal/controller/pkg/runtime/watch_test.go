@@ -126,14 +126,24 @@ func TestEnqueueProviderRevisionsForMRDs(t *testing.T) {
 	}
 }
 
-func TestMRDActivatedPredicate(t *testing.T) {
+func TestMRDActivationChangedPredicate(t *testing.T) {
 	mrd := func(state extv1alpha1.ManagedResourceDefinitionState) *extv1alpha1.ManagedResourceDefinition {
 		return &extv1alpha1.ManagedResourceDefinition{
 			Spec: extv1alpha1.ManagedResourceDefinitionSpec{State: state},
 		}
 	}
 
-	p := mrdActivated()
+	pendingRemoval := mrd(extv1alpha1.ManagedResourceDefinitionPolicyManaged)
+
+	policyManaged := func(activators ...string) *extv1alpha1.ManagedResourceDefinition {
+		m := mrd(extv1alpha1.ManagedResourceDefinitionPolicyManaged)
+		for _, a := range activators {
+			m.Spec.Activators = append(m.Spec.Activators, extv1alpha1.Activator{Name: a})
+		}
+		return m
+	}
+
+	p := mrdActivationChanged()
 
 	cases := map[string]struct {
 		reason string
@@ -174,8 +184,29 @@ func TestMRDActivatedPredicate(t *testing.T) {
 			}),
 			want: false,
 		},
+		"CreatePendingRemoval": {
+			reason: "Creating a PolicyManaged MRD with no activators should pass, so its removal window can open after an informer restart.",
+			got:    p.Create(event.CreateEvent{Object: pendingRemoval}),
+			want:   true,
+		},
+		"UpdateLastActivatorRemoved": {
+			reason: "An MRD whose last activator went away should pass, so its removal window can open.",
+			got: p.Update(event.UpdateEvent{
+				ObjectOld: policyManaged("default"),
+				ObjectNew: policyManaged(),
+			}),
+			want: true,
+		},
+		"UpdateActivatorAdded": {
+			reason: "An MRD that reacquired an activator should pass, so the runtime can come back up.",
+			got: p.Update(event.UpdateEvent{
+				ObjectOld: policyManaged(),
+				ObjectNew: policyManaged("default"),
+			}),
+			want: true,
+		},
 		"Delete": {
-			reason: "Deleting an MRD should not pass. MRD activation is one-way.",
+			reason: "Deleting an MRD should not pass. The CRD deletion is the terminal fact, not this event.",
 			got:    p.Delete(event.DeleteEvent{Object: mrd(extv1alpha1.ManagedResourceDefinitionActive)}),
 			want:   false,
 		},
@@ -189,7 +220,7 @@ func TestMRDActivatedPredicate(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			if diff := cmp.Diff(tc.want, tc.got); diff != "" {
-				t.Errorf("\n%s\nmrdActivated(): -want, +got:\n%s", tc.reason, diff)
+				t.Errorf("\n%s\nmrdActivationChanged(): -want, +got:\n%s", tc.reason, diff)
 			}
 		})
 	}

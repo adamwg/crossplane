@@ -113,7 +113,8 @@ func WithFeatures(f *feature.Flags) ReconcilerOption {
 // NewReconciler returns a Reconciler of ManagedResourceDefinitions.
 func NewReconciler(mgr ctrl.Manager, opts ...ReconcilerOption) *Reconciler {
 	r := &Reconciler{
-		client: mgr.GetClient(),
+		client:   mgr.GetClient(),
+		uncached: mgr.GetAPIReader(),
 
 		managedFields: &ssa.NopManagedFieldsUpgrader{},
 

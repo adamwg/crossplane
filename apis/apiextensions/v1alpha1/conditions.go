@@ -40,6 +40,7 @@ const (
 	EstablishedManagedResource        xpv2.ConditionReason = "EstablishedManagedResource"
 	ReasonPendingManaged              xpv2.ConditionReason = "PendingManagedResource"
 	ReasonInactiveManaged             xpv2.ConditionReason = "InactiveManagedResource"
+	ReasonPendingRemoval              xpv2.ConditionReason = "PendingRemoval"
 	ReasonBlockedActivationPolicy     xpv2.ConditionReason = "BlockedManagedResourceActivationPolicy"
 	ReasonTerminatingManaged          xpv2.ConditionReason = "TerminatingManagedResource"
 	ReasonTerminatingActivationPolicy xpv2.ConditionReason = "TerminatingManagedResourceActivationPolicy"
@@ -62,6 +63,18 @@ func InactiveManaged() xpv2.Condition {
 		Status:             corev1.ConditionFalse,
 		LastTransitionTime: metav1.Now(),
 		Reason:             ReasonInactiveManaged,
+	}
+}
+
+// PendingRemovalManaged indicates that no activator wants this type any more,
+// so it is queued for removal. The message carries the live instance count and
+// the policies being waited on.
+func PendingRemovalManaged() xpv2.Condition {
+	return xpv2.Condition{
+		Type:               TypeEstablished,
+		Status:             corev1.ConditionFalse,
+		LastTransitionTime: metav1.Now(),
+		Reason:             ReasonPendingRemoval,
 	}
 }
 

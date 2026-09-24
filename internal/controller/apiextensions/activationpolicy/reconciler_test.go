@@ -124,7 +124,10 @@ func WantMRAP(t *testing.T, want *v1alpha1.ManagedResourceActivationPolicy) func
 	t.Helper()
 	return func(_ context.Context, got client.Object, _ ...client.SubResourceUpdateOption) error {
 		t.Helper()
-		if diff := cmp.Diff(want, got, cmpopts.EquateApproxTime(3*time.Second)); diff != "" {
+		if diff := cmp.Diff(want, got,
+			cmpopts.EquateApproxTime(3*time.Second),
+			cmpopts.IgnoreFields(metav1.ObjectMeta{}, "Finalizers"),
+		); diff != "" {
 			t.Errorf("WantMRAP(...): -want, +got: %s", diff)
 		}
 		return nil
@@ -147,7 +150,8 @@ func WithMRDList(t *testing.T, mrds ...*v1alpha1.ManagedResourceDefinition) func
 	}
 }
 
-// A patch function that validates the patch operation.
+// A patch function that validates the state latch. Server-side applies of the
+// activator entry pass an Unstructured and fall through it.
 func WantMRDPatch(t *testing.T, expectedPatches map[string]v1alpha1.ManagedResourceDefinitionState) func(context.Context, client.Object, client.Patch, ...client.PatchOption) error {
 	t.Helper()
 	return func(_ context.Context, obj client.Object, _ client.Patch, _ ...client.PatchOption) error {
@@ -184,7 +188,8 @@ func TestReconcile(t *testing.T) {
 			reason: "We should not return an error if the ManagedResourceActivationPolicy was not found.",
 			args: args{
 				c: &test.MockClient{
-					MockGet: test.NewMockGetFn(kerrors.NewNotFound(schema.GroupResource{}, "")),
+					MockUpdate: test.NewMockUpdateFn(nil),
+					MockGet:    test.NewMockGetFn(kerrors.NewNotFound(schema.GroupResource{}, "")),
 				},
 			},
 			want: want{
@@ -195,7 +200,8 @@ func TestReconcile(t *testing.T) {
 			reason: "We should return error encountered while getting the ManagedResourceActivationPolicy.",
 			args: args{
 				c: &test.MockClient{
-					MockGet: test.NewMockGetFn(errBoom),
+					MockUpdate: test.NewMockUpdateFn(nil),
+					MockGet:    test.NewMockGetFn(errBoom),
 				},
 			},
 			want: want{
@@ -206,7 +212,9 @@ func TestReconcile(t *testing.T) {
 			reason: "We should update status to Terminating and return without error when MRAP is being deleted.",
 			args: args{
 				c: &test.MockClient{
-					MockGet: WithMRAP(t, NewMRAP(WithMRAPDeletionTimestamp(now.Time))),
+					MockUpdate: test.NewMockUpdateFn(nil),
+					MockGet:    WithMRAP(t, NewMRAP(WithMRAPDeletionTimestamp(now.Time))),
+					MockList:   WithMRDList(t),
 					MockStatusUpdate: WantMRAP(t, NewMRAP(func(mrap *v1alpha1.ManagedResourceActivationPolicy) {
 						mrap.SetDeletionTimestamp(&now)
 						mrap.SetConditions(v1alpha1.TerminatingActivationPolicy())
@@ -221,6 +229,7 @@ func TestReconcile(t *testing.T) {
 			reason: "We should requeue on conflict when updating status during deletion.",
 			args: args{
 				c: &test.MockClient{
+					MockUpdate:       test.NewMockUpdateFn(nil),
 					MockGet:          WithMRAP(t, NewMRAP(WithMRAPDeletionTimestamp(now.Time))),
 					MockStatusUpdate: test.NewMockSubResourceUpdateFn(kerrors.NewConflict(schema.GroupResource{}, "", errBoom)),
 				},
@@ -233,6 +242,7 @@ func TestReconcile(t *testing.T) {
 			reason: "We should return error when status update fails during deletion with non-conflict error.",
 			args: args{
 				c: &test.MockClient{
+					MockUpdate:       test.NewMockUpdateFn(nil),
 					MockGet:          WithMRAP(t, NewMRAP(WithMRAPDeletionTimestamp(now.Time))),
 					MockStatusUpdate: test.NewMockSubResourceUpdateFn(errBoom),
 				},
@@ -245,7 +255,8 @@ func TestReconcile(t *testing.T) {
 			reason: "We should return no error and no requeue when reconciliation is paused.",
 			args: args{
 				c: &test.MockClient{
-					MockGet: WithMRAP(t, NewMRAP(WithMRAPPaused())),
+					MockUpdate: test.NewMockUpdateFn(nil),
+					MockGet:    WithMRAP(t, NewMRAP(WithMRAPPaused())),
 				},
 			},
 			want: want{
@@ -256,8 +267,9 @@ func TestReconcile(t *testing.T) {
 			reason: "We should return error and update status when listing MRDs fails.",
 			args: args{
 				c: &test.MockClient{
-					MockGet:  WithMRAP(t, NewMRAP()),
-					MockList: test.NewMockListFn(errBoom),
+					MockUpdate: test.NewMockUpdateFn(nil),
+					MockGet:    WithMRAP(t, NewMRAP()),
+					MockList:   test.NewMockListFn(errBoom),
 					MockStatusUpdate: WantMRAP(t, NewMRAP(func(mrap *v1alpha1.ManagedResourceActivationPolicy) {
 						mrap.SetConditions(v1alpha1.BlockedActivationPolicy().WithMessage("cannot list ManagedResourceDefinition"))
 					})),
@@ -271,6 +283,7 @@ func TestReconcile(t *testing.T) {
 			reason: "We should requeue on conflict when updating status after list MRD error.",
 			args: args{
 				c: &test.MockClient{
+					MockUpdate:       test.NewMockUpdateFn(nil),
 					MockGet:          WithMRAP(t, NewMRAP()),
 					MockList:         test.NewMockListFn(errBoom),
 					MockStatusUpdate: test.NewMockSubResourceUpdateFn(kerrors.NewConflict(schema.GroupResource{}, "", errBoom)),
@@ -284,7 +297,8 @@ func TestReconcile(t *testing.T) {
 			reason: "We should succeed when no MRDs match the activation policy.",
 			args: args{
 				c: &test.MockClient{
-					MockGet: WithMRAP(t, NewMRAP(WithMRAPActivations("*.aws.crossplane.io"))),
+					MockUpdate: test.NewMockUpdateFn(nil),
+					MockGet:    WithMRAP(t, NewMRAP(WithMRAPActivations("*.aws.crossplane.io"))),
 					MockList: WithMRDList(t,
 						NewMRD("database.gcp.crossplane.io"),
 						NewMRD("storage.azure.crossplane.io"),
@@ -304,13 +318,14 @@ func TestReconcile(t *testing.T) {
 			reason: "We should activate a single MRD that matches the activation policy.",
 			args: args{
 				c: &test.MockClient{
-					MockGet: WithMRAP(t, NewMRAP(WithMRAPActivations("*.aws.crossplane.io"))),
+					MockUpdate: test.NewMockUpdateFn(nil),
+					MockGet:    WithMRAP(t, NewMRAP(WithMRAPActivations("*.aws.crossplane.io"))),
 					MockList: WithMRDList(t,
 						NewMRD("bucket.aws.crossplane.io", WithMRDState(v1alpha1.ManagedResourceDefinitionInactive)),
 						NewMRD("database.gcp.crossplane.io", WithMRDState(v1alpha1.ManagedResourceDefinitionInactive)),
 					),
 					MockPatch: WantMRDPatch(t, map[string]v1alpha1.ManagedResourceDefinitionState{
-						"bucket.aws.crossplane.io": v1alpha1.ManagedResourceDefinitionActive,
+						"bucket.aws.crossplane.io": v1alpha1.ManagedResourceDefinitionPolicyManaged,
 					}),
 					MockStatusUpdate: WantMRAP(t, NewMRAP(func(mrap *v1alpha1.ManagedResourceActivationPolicy) {
 						mrap.Spec.Activations = []v1alpha1.ActivationPolicy{"*.aws.crossplane.io"}
@@ -327,15 +342,16 @@ func TestReconcile(t *testing.T) {
 			reason: "We should activate multiple MRDs that match the activation policy.",
 			args: args{
 				c: &test.MockClient{
-					MockGet: WithMRAP(t, NewMRAP(WithMRAPActivations("*.aws.crossplane.io"))),
+					MockUpdate: test.NewMockUpdateFn(nil),
+					MockGet:    WithMRAP(t, NewMRAP(WithMRAPActivations("*.aws.crossplane.io"))),
 					MockList: WithMRDList(t,
 						NewMRD("bucket.aws.crossplane.io", WithMRDState(v1alpha1.ManagedResourceDefinitionInactive)),
 						NewMRD("instance.aws.crossplane.io", WithMRDState(v1alpha1.ManagedResourceDefinitionInactive)),
 						NewMRD("database.gcp.crossplane.io", WithMRDState(v1alpha1.ManagedResourceDefinitionInactive)),
 					),
 					MockPatch: WantMRDPatch(t, map[string]v1alpha1.ManagedResourceDefinitionState{
-						"bucket.aws.crossplane.io":   v1alpha1.ManagedResourceDefinitionActive,
-						"instance.aws.crossplane.io": v1alpha1.ManagedResourceDefinitionActive,
+						"bucket.aws.crossplane.io":   v1alpha1.ManagedResourceDefinitionPolicyManaged,
+						"instance.aws.crossplane.io": v1alpha1.ManagedResourceDefinitionPolicyManaged,
 					}),
 					MockStatusUpdate: WantMRAP(t, NewMRAP(func(mrap *v1alpha1.ManagedResourceActivationPolicy) {
 						mrap.Spec.Activations = []v1alpha1.ActivationPolicy{"*.aws.crossplane.io"}
@@ -348,17 +364,19 @@ func TestReconcile(t *testing.T) {
 				r: reconcile.Result{},
 			},
 		},
-		"SkipAlreadyActiveMRD": {
-			reason: "We should skip MRDs that are already active and include them in status.",
+		"LatchAlreadyActiveMRD": {
+			reason: "We should latch an MRD the old controller pinned Active into policy management, so that upgraded clusters become eligible for deactivation.",
 			args: args{
 				c: &test.MockClient{
-					MockGet: WithMRAP(t, NewMRAP(WithMRAPActivations("*.aws.crossplane.io"))),
+					MockUpdate: test.NewMockUpdateFn(nil),
+					MockGet:    WithMRAP(t, NewMRAP(WithMRAPActivations("*.aws.crossplane.io"))),
 					MockList: WithMRDList(t,
 						NewMRD("bucket.aws.crossplane.io", WithMRDState(v1alpha1.ManagedResourceDefinitionActive)),
 						NewMRD("instance.aws.crossplane.io", WithMRDState(v1alpha1.ManagedResourceDefinitionInactive)),
 					),
 					MockPatch: WantMRDPatch(t, map[string]v1alpha1.ManagedResourceDefinitionState{
-						"instance.aws.crossplane.io": v1alpha1.ManagedResourceDefinitionActive,
+						"bucket.aws.crossplane.io":   v1alpha1.ManagedResourceDefinitionPolicyManaged,
+						"instance.aws.crossplane.io": v1alpha1.ManagedResourceDefinitionPolicyManaged,
 					}),
 					MockStatusUpdate: WantMRAP(t, NewMRAP(func(mrap *v1alpha1.ManagedResourceActivationPolicy) {
 						mrap.Spec.Activations = []v1alpha1.ActivationPolicy{"*.aws.crossplane.io"}
@@ -375,7 +393,8 @@ func TestReconcile(t *testing.T) {
 			reason: "We should set unhealthy status when some MRDs fail to activate.",
 			args: args{
 				c: &test.MockClient{
-					MockGet: WithMRAP(t, NewMRAP(WithMRAPActivations("*.aws.crossplane.io"))),
+					MockUpdate: test.NewMockUpdateFn(nil),
+					MockGet:    WithMRAP(t, NewMRAP(WithMRAPActivations("*.aws.crossplane.io"))),
 					MockList: WithMRDList(t,
 						NewMRD("bucket.aws.crossplane.io", WithMRDState(v1alpha1.ManagedResourceDefinitionInactive)),
 						NewMRD("instance.aws.crossplane.io", WithMRDState(v1alpha1.ManagedResourceDefinitionInactive)),
@@ -403,15 +422,16 @@ func TestReconcile(t *testing.T) {
 			reason: "We should activate MRDs matching any of multiple activation policies.",
 			args: args{
 				c: &test.MockClient{
-					MockGet: WithMRAP(t, NewMRAP(WithMRAPActivations("*.aws.crossplane.io", "*.gcp.crossplane.io"))),
+					MockUpdate: test.NewMockUpdateFn(nil),
+					MockGet:    WithMRAP(t, NewMRAP(WithMRAPActivations("*.aws.crossplane.io", "*.gcp.crossplane.io"))),
 					MockList: WithMRDList(t,
 						NewMRD("bucket.aws.crossplane.io", WithMRDState(v1alpha1.ManagedResourceDefinitionInactive)),
 						NewMRD("storage.gcp.crossplane.io", WithMRDState(v1alpha1.ManagedResourceDefinitionInactive)),
 						NewMRD("database.azure.crossplane.io", WithMRDState(v1alpha1.ManagedResourceDefinitionInactive)),
 					),
 					MockPatch: WantMRDPatch(t, map[string]v1alpha1.ManagedResourceDefinitionState{
-						"bucket.aws.crossplane.io":  v1alpha1.ManagedResourceDefinitionActive,
-						"storage.gcp.crossplane.io": v1alpha1.ManagedResourceDefinitionActive,
+						"bucket.aws.crossplane.io":  v1alpha1.ManagedResourceDefinitionPolicyManaged,
+						"storage.gcp.crossplane.io": v1alpha1.ManagedResourceDefinitionPolicyManaged,
 					}),
 					MockStatusUpdate: WantMRAP(t, NewMRAP(func(mrap *v1alpha1.ManagedResourceActivationPolicy) {
 						mrap.Spec.Activations = []v1alpha1.ActivationPolicy{"*.aws.crossplane.io", "*.gcp.crossplane.io"}
@@ -428,7 +448,8 @@ func TestReconcile(t *testing.T) {
 			reason: "We should succeed with empty status when no activation policies are defined.",
 			args: args{
 				c: &test.MockClient{
-					MockGet: WithMRAP(t, NewMRAP(WithMRAPActivations())),
+					MockUpdate: test.NewMockUpdateFn(nil),
+					MockGet:    WithMRAP(t, NewMRAP(WithMRAPActivations())),
 					MockList: WithMRDList(t,
 						NewMRD("bucket.aws.crossplane.io", WithMRDState(v1alpha1.ManagedResourceDefinitionInactive)),
 					),
@@ -447,6 +468,7 @@ func TestReconcile(t *testing.T) {
 			reason: "We should return error when final status update fails.",
 			args: args{
 				c: &test.MockClient{
+					MockUpdate:       test.NewMockUpdateFn(nil),
 					MockGet:          WithMRAP(t, NewMRAP(WithMRAPActivations("*.aws.crossplane.io"))),
 					MockList:         WithMRDList(t),
 					MockStatusUpdate: test.NewMockSubResourceUpdateFn(errBoom),

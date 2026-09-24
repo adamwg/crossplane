@@ -47,8 +47,16 @@ type ManagedResourceActivationPolicyStatus struct {
 	xpv2.ConditionedStatus `json:",inline"`
 
 	// Activated names the ManagedResourceDefinitions this policy has activated.
+	// It is informational; nothing keys off it.
 	// +optional
 	Activated []string `json:"activated,omitempty"`
+
+	// ObservedGeneration is the metadata.generation whose activator writes have
+	// all landed. Its contract is stricter than the usual convention: it only
+	// advances when every write implied by that generation succeeded, so that
+	// generation == observedGeneration means the policy is fully applied.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 }
 
 // ClearActivated sets the activated list to nil.

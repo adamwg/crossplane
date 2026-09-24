@@ -19,9 +19,12 @@ package managed
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	extv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kunstructured "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -57,6 +60,7 @@ const (
 	reasonReconcile event.Reason = "Reconcile"
 	reasonPaused    event.Reason = "ReconciliationPaused"
 	reasonApplyCRD  event.Reason = "ApplyCustomResourceDefinition"
+	reasonDeleteCRD event.Reason = "DeleteCustomResourceDefinition"
 )
 
 // FieldOwnerMRD is the field manager name used when applying CRDs.
@@ -65,6 +69,11 @@ const FieldOwnerMRD = "apiextensions.crossplane.io/managed"
 // A Reconciler reconciles ManagedResourceDefinitions.
 type Reconciler struct {
 	client client.Client
+
+	// uncached reads straight from the API server. Counting a type's instances
+	// through the cached client would spin up an informer for every managed
+	// resource type in the cluster.
+	uncached client.Reader
 
 	managedFields ssa.ManagedFieldsUpgrader
 
@@ -117,11 +126,26 @@ func (r *Reconciler) Reconcile(ogctx context.Context, req reconcile.Request) (re
 		return reconcile.Result{}, nil
 	}
 
-	if !mrd.Spec.State.IsActive() {
+	if !mrd.IsActive() {
+		// A PolicyManaged MRD whose last activator went away is a candidate for
+		// removal, but removing it is not ours to decide on our own: deleting
+		// the CRD while the provider is still reconciling the type wedges it in
+		// Terminating behind provider finalizers. We report, and wait for the
+		// package manager to stop the runtime and release us.
+		if mrd.IsPendingRemoval() {
+			return r.reconcilePendingRemoval(ogctx, ctx, log, mrd)
+		}
+
 		r.cleanupProtection(ctx, log, mrd.GetName())
 		status.MarkConditions(v1alpha1.InactiveManaged())
 		return reconcile.Result{}, errors.Wrap(r.client.Status().Update(ogctx, mrd), "cannot update status of ManagedResourceDefinition")
 	}
+
+	// Mirror the activator set while it is populated. Its staleness is the
+	// point: once the spec list empties, this is the only record of who was
+	// holding the type, which is what the package manager reads to work out
+	// which policies to wait on.
+	mrd.Status.Activators = mrd.Spec.Activators
 
 	// Read the CRD to upgrade its managed fields if needed.
 	crd := &extv1.CustomResourceDefinition{}
@@ -203,6 +227,108 @@ func (r *Reconciler) Reconcile(ogctx context.Context, req reconcile.Request) (re
 	}
 
 	return reconcile.Result{}, errors.Wrap(r.client.Status().Update(ogctx, mrd), "cannot update status of ManagedResourceDefinition")
+}
+
+// reconcilePendingRemoval handles a PolicyManaged MRD with no activators left.
+//
+// Until the package manager releases it, this does nothing destructive: it
+// stops re-applying the CRD and reports what the removal is waiting on, but
+// leaves the CRD, the protection controller and its watch alone. Tearing those
+// down here would destroy the very thing that tells us whether the type is
+// still in use.
+//
+// Once released - which the package manager only does with the runtime
+// confirmed down - it tears the type down and deletes the CRD.
+func (r *Reconciler) reconcilePendingRemoval(ogctx, ctx context.Context, log logging.Logger, mrd *v1alpha1.ManagedResourceDefinition) (reconcile.Result, error) {
+	status := r.conditions.For(mrd)
+
+	crd := &extv1.CustomResourceDefinition{}
+	err := r.client.Get(ctx, types.NamespacedName{Name: mrd.GetName()}, crd)
+	switch {
+	case kerrors.IsNotFound(err):
+		// The CRD is already gone, so the removal is complete.
+		r.cleanupProtection(ctx, log, mrd.GetName())
+		status.MarkConditions(v1alpha1.InactiveManaged())
+		return reconcile.Result{}, errors.Wrap(r.client.Status().Update(ogctx, mrd), "cannot update status of ManagedResourceDefinition")
+	case err != nil:
+		return reconcile.Result{}, errors.Wrap(err, "cannot get CustomResourceDefinition")
+	}
+
+	if !mrd.IsReleasedForRemoval() {
+		instances, err := r.countInstances(ctx, mrd)
+		if err != nil {
+			log.Debug("cannot count managed resource instances", "error", err)
+		}
+
+		status.MarkConditions(v1alpha1.PendingRemovalManaged().WithMessage(pendingRemovalMessage(mrd, instances)))
+		return reconcile.Result{}, errors.Wrap(r.client.Status().Update(ogctx, mrd), "cannot update status of ManagedResourceDefinition")
+	}
+
+	// Released. Drain, then stop, then delete - never stop, then drain. The
+	// package manager has already stopped the runtime and re-checked that the
+	// type is empty against a live read.
+	log.Info("Deleting CustomResourceDefinition for deactivated ManagedResourceDefinition", "name", mrd.GetName())
+
+	r.cleanupProtection(ctx, log, mrd.GetName())
+
+	if err := r.client.Delete(ctx, crd); resource.IgnoreNotFound(err) != nil {
+		r.record.Event(mrd, event.Warning(reasonDeleteCRD, err))
+		return reconcile.Result{}, errors.Wrap(err, "cannot delete CustomResourceDefinition")
+	}
+
+	r.record.Event(mrd, event.Normal(reasonDeleteCRD, "Successfully deleted CustomResourceDefinition"))
+
+	// Clear the release so that a later reactivation doesn't find a stale one
+	// and skip the window.
+	orig := mrd.DeepCopy()
+	delete(mrd.Annotations, v1alpha1.AnnotationKeyReleasedForRemoval)
+	if err := r.client.Patch(ctx, mrd, client.MergeFrom(orig)); err != nil {
+		return reconcile.Result{}, errors.Wrap(err, "cannot clear release annotation")
+	}
+
+	status.MarkConditions(v1alpha1.InactiveManaged())
+	return reconcile.Result{}, errors.Wrap(r.client.Status().Update(ogctx, mrd), "cannot update status of ManagedResourceDefinition")
+}
+
+// countInstances returns the number of live instances of the MRD's type, read
+// uncached. It returns -1 if the count could not be determined.
+func (r *Reconciler) countInstances(ctx context.Context, mrd *v1alpha1.ManagedResourceDefinition) (int, error) {
+	list := &kunstructured.UnstructuredList{}
+	list.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   mrd.Spec.Group,
+		Version: storageVersion(mrd),
+		Kind:    mrd.Spec.Names.Kind + "List",
+	})
+
+	if err := r.uncached.List(ctx, list); err != nil {
+		return -1, errors.Wrap(err, "cannot list managed resources")
+	}
+
+	return len(list.Items), nil
+}
+
+// pendingRemovalMessage explains what this type's removal is waiting on.
+func pendingRemovalMessage(mrd *v1alpha1.ManagedResourceDefinition, instances int) string {
+	switch {
+	case instances > 0:
+		return fmt.Sprintf("No activators; %d instances must be deleted before this type is removed", instances)
+	case instances < 0:
+		return "No activators; cannot determine how many instances of this type exist"
+	}
+
+	held := make([]string, 0, len(mrd.Status.Activators))
+	for _, a := range mrd.Status.Activators {
+		held = append(held, a.Name)
+	}
+
+	if len(held) == 0 {
+		// Unattributable: we never mirrored an activator set, so nobody can say
+		// which policies to wait on. The package manager holds the window shut.
+		return "No activators; 0 instances; no record of which ManagedResourceActivationPolicies held this type"
+	}
+
+	return fmt.Sprintf("No activators; 0 instances; queued for removal once %s has finished reconciling and the provider runtime is stopped",
+		strings.Join(held, ", "))
 }
 
 // handOverControl lets the CRD we are about to apply take control from the

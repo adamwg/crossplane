@@ -702,6 +702,11 @@ func (e *APIEstablisher) merge(_ context.Context, c, d resource.Object) error {
 		if !desired.Spec.State.IsActive() {
 			desired.Spec.State = current.Spec.State
 		}
+		// So is spec.activators, which belongs to the activation policies that
+		// server-side apply their own entries. A package never declares it, so
+		// carrying it over is what stops a re-establish from deactivating
+		// every type the policies are holding open.
+		desired.Spec.Activators = current.Spec.Activators
 	}
 
 	return nil

@@ -56,6 +56,41 @@ spec:
             description: ManagedResourceDefinitionSpec specifies the desired state
               of the resource definition.
             properties:
+              activators:
+                description: |-
+                  Activators names the objects that currently want this type to exist.
+                  Each ManagedResourceActivationPolicy server-side applies only its own
+                  entry, under its own field manager, so dropping a pattern removes the
+                  entry without any participant computing a union.
+
+                  It is only consulted when state is PolicyManaged.
+                items:
+                  description: |-
+                    An Activator is an object that wants a ManagedResourceDefinition's type to
+                    exist.
+                  properties:
+                    generation:
+                      description: |-
+                        Generation of the activating object when it wrote this entry. It is
+                        diagnostic only - nothing waits on it.
+                      format: int64
+                      type: integer
+                    kind:
+                      description: |-
+                        Kind of the activating object. Entries written by the activation policy
+                        controller use ManagedResourceActivationPolicy; anything else was
+                        written by hand.
+                      type: string
+                    name:
+                      description: Name of the activating object.
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               connectionDetails:
                 description: ConnectionDetails is an array of connection detail keys
                   and descriptions.
@@ -261,15 +296,22 @@ spec:
                   rule: self == oldSelf
               state:
                 default: Inactive
-                description: State toggles whether the underlying CRD is created or
-                  not.
+                description: |-
+                  State toggles whether the underlying CRD is created or not.
+
+                  Active pins the type on: its CRD is created and never removed by
+                  policy. PolicyManaged hands the decision to spec.activators; the CRD is
+                  created while at least one activator holds the type, and removed once
+                  the last one lets go.
                 enum:
                 - Active
                 - Inactive
+                - PolicyManaged
                 type: string
                 x-kubernetes-validations:
-                - message: state cannot be changed once it becomes Active
-                  rule: self == oldSelf || oldSelf != 'Active'
+                - message: state cannot be changed once it becomes Active, except
+                    to PolicyManaged
+                  rule: self == oldSelf || oldSelf == 'Inactive' || self == 'PolicyManaged'
               versions:
                 description: |-
                   Versions is the list of all API versions of the defined custom resource.
@@ -458,6 +500,38 @@ spec:
             description: ManagedResourceDefinitionStatus shows the observed state
               of the resource definition.
             properties:
+              activators:
+                description: |-
+                  Activators mirrors the last observed non-empty spec.activators. When the
+                  spec list empties this retains the previous holders, which is how a
+                  pending removal says who released it.
+                items:
+                  description: |-
+                    An Activator is an object that wants a ManagedResourceDefinition's type to
+                    exist.
+                  properties:
+                    generation:
+                      description: |-
+                        Generation of the activating object when it wrote this entry. It is
+                        diagnostic only - nothing waits on it.
+                      format: int64
+                      type: integer
+                    kind:
+                      description: |-
+                        Kind of the activating object. Entries written by the activation policy
+                        controller use ManagedResourceActivationPolicy; anything else was
+                        written by hand.
+                      type: string
+                    name:
+                      description: Name of the activating object.
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               conditions:
                 description: Conditions of the resource.
                 items:

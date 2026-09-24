@@ -159,6 +159,7 @@ type DeploymentRuntimeBuilder struct {
 	runtimeConfig             *v1beta1.DeploymentRuntimeConfig
 	pullSecrets               []string
 	awaitingActivation        bool
+	deactivating              bool
 }
 
 // BuilderOption is used to configure a DeploymentRuntimeBuilder.
@@ -265,21 +266,38 @@ func BuilderWithMRDs(mrds []extv1alpha1.ManagedResourceDefinition) BuilderOption
 			return
 		}
 		// One-way latch: once the runtime has been activated, never scale it
-		// back to zero even if MRDs later appear inactive (deactivation is not
-		// yet supported, but guard against manual edits or future changes).
+		// back to zero just because its MRDs look inactive. Deactivation stops
+		// the runtime deliberately, through BuilderDeactivating, rather than by
+		// unlatching this.
 		if b.revision.GetCondition(v1.TypeRuntimeActive).Reason == v1.ReasonActiveRuntime {
 			return
 		}
 		if len(mrds) == 0 {
 			return
 		}
-		for _, mrd := range mrds {
-			if mrd.Spec.State.IsActive() {
+		for i := range mrds {
+			if mrds[i].IsActive() {
 				return
 			}
 		}
 		b.awaitingActivation = true
 	}
+}
+
+// BuilderDeactivating scales the Deployment to zero for the length of a
+// ManagedResourceDefinition removal window. Unlike BuilderWithMRDs this is not
+// latched: the package manager sets it while the window is open and drops it
+// once the CRDs are gone, which is what brings the runtime back up.
+func BuilderDeactivating() BuilderOption {
+	return func(b *DeploymentRuntimeBuilder) {
+		b.deactivating = true
+	}
+}
+
+// Deactivating reports whether the builder is stopping the runtime for a
+// removal window.
+func (b *DeploymentRuntimeBuilder) Deactivating() bool {
+	return b.deactivating
 }
 
 // AwaitingActivation reports whether the builder has determined that the
@@ -380,12 +398,13 @@ func (b *DeploymentRuntimeBuilder) Deployment(serviceAccount string, overrides .
 		}),
 	)
 
-	if b.awaitingActivation {
-		// Scale the runtime to zero while awaiting activation, overriding any
-		// replica count from the deployment runtime config. A provider only
-		// asks for multiple replicas for leader-election standby or webhook
-		// redundancy, neither of which matters while none of its managed
-		// resources are being reconciled.
+	if b.awaitingActivation || b.deactivating {
+		// Scale the runtime to zero while awaiting activation, or for the
+		// length of a removal window, overriding any replica count from the
+		// deployment runtime config. A provider only asks for multiple
+		// replicas for leader-election standby or webhook redundancy, neither
+		// of which matters while none of its managed resources are being
+		// reconciled.
 		allOverrides = append(allOverrides, DeploymentWithReplicas(0))
 	}
 
