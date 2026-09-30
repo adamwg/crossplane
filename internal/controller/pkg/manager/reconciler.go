@@ -139,20 +139,11 @@ func WithRecorder(er event.Recorder) ReconcilerOption {
 	}
 }
 
-// WithManagingRevisionRuntimeSpec will allow this reconciler to propagate the
-// runtime spec fields to revisions.
-func WithManagingRevisionRuntimeSpec() ReconcilerOption {
+// WithSetRevisionRuntimeSpecFunc configures how the reconciler sets runtime
+// fields in package revisions.
+func WithSetRevisionRuntimeSpecFunc(fn func(p v1.Package, pr v1.PackageRevision)) ReconcilerOption {
 	return func(r *Reconciler) {
-		r.setPackageRuntimeManagedFields = func(p v1.Package, pr v1.PackageRevision) {
-			pwr, pwok := p.(v1.PackageWithRuntime)
-
-			prwr, prok := pr.(v1.PackageRevisionWithRuntime)
-			if pwok && prok {
-				prwr.SetRuntimeConfigRef(pwr.GetRuntimeConfigRef())
-				prwr.SetTLSServerSecretName(pwr.GetTLSServerSecretName())
-				prwr.SetTLSClientSecretName(pwr.GetTLSClientSecretName())
-			}
-		}
+		r.setPackageRuntimeManagedFields = fn
 	}
 }
 
@@ -189,7 +180,15 @@ func SetupProvider(mgr ctrl.Manager, o controller.Options) error {
 	}
 
 	if o.PackageRuntime.For(v1.ProviderKind) == controller.PackageRuntimeDeployment {
-		opts = append(opts, WithManagingRevisionRuntimeSpec())
+		opts = append(opts, WithSetRevisionRuntimeSpecFunc(func(p v1.Package, pr v1.PackageRevision) {
+			pwr, pwok := p.(v1.PackageWithRuntime)
+			prwr, prok := pr.(v1.PackageRevisionWithRuntime)
+			if pwok && prok {
+				prwr.SetRuntimeConfigRef(pwr.GetRuntimeConfigRef())
+				prwr.SetTLSServerSecretName(getSecretNameWithSuffix(p.GetName(), tlsServerSecretNameSuffix))
+				prwr.SetTLSClientSecretName(getSecretNameWithSuffix(p.GetName(), tlsClientSecretNameSuffix))
+			}
+		}))
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).
@@ -245,7 +244,16 @@ func SetupFunction(mgr ctrl.Manager, o controller.Options) error {
 	}
 
 	if o.PackageRuntime.For(v1.FunctionKind) == controller.PackageRuntimeDeployment {
-		opts = append(opts, WithManagingRevisionRuntimeSpec())
+		opts = append(opts, WithSetRevisionRuntimeSpecFunc(func(p v1.Package, pr v1.PackageRevision) {
+			pwr, pwok := p.(v1.PackageWithRuntime)
+			prwr, prok := pr.(v1.PackageRevisionWithRuntime)
+			if pwok && prok {
+				prwr.SetRuntimeConfigRef(pwr.GetRuntimeConfigRef())
+				prwr.SetTLSServerSecretName(getSecretNameWithSuffix(p.GetName(), tlsServerSecretNameSuffix))
+				// Functions don't have a client certificate, so the client
+				// certificate name is intentionally unset.
+			}
+		}))
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).
@@ -518,4 +526,26 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 	// its health. If updating from an existing revision, the package health
 	// will match the health of the old revision until the next reconcile.
 	return pullBasedRequeue(p.GetPackagePullPolicy()), errors.Wrap(r.kube.Status().Update(ctx, p), errUpdateStatus)
+}
+
+const (
+	// tlsServerSecretNameSuffix is the suffix added to the name of a secret that
+	// contains TLS server certificates.
+	tlsServerSecretNameSuffix = "-tls-server"
+	// tlsClientSecretNameSuffix is the suffix added to the name of a secret that
+	// contains TLS client certificates.
+	tlsClientSecretNameSuffix = "-tls-client"
+)
+
+// getSecretNameWithSuffix returns a secret name with the given suffix.
+// K8s secret names can be at most 253 characters long, so we truncate the
+// name if necessary.
+func getSecretNameWithSuffix(name, suffix string) *string {
+	if len(name) > 253-len(suffix) {
+		name = name[0 : 253-len(suffix)]
+	}
+
+	s := name + suffix
+
+	return &s
 }

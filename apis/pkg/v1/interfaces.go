@@ -86,10 +86,6 @@ type PackageWithRuntime interface {
 
 	GetRuntimeConfigRef() *RuntimeConfigReference
 	SetRuntimeConfigRef(r *RuntimeConfigReference)
-
-	GetTLSServerSecretName() *string
-
-	GetTLSClientSecretName() *string
 }
 
 // SetAppliedImageConfigRefs sets applied image config refs, replacing any
@@ -310,16 +306,6 @@ func (p *Provider) GetCommonAnnotations() map[string]string {
 // SetCommonAnnotations of this Provider.
 func (p *Provider) SetCommonAnnotations(a map[string]string) {
 	p.Spec.CommonAnnotations = a
-}
-
-// GetTLSServerSecretName of this Provider.
-func (p *Provider) GetTLSServerSecretName() *string {
-	return GetSecretNameWithSuffix(p.GetName(), TLSServerSecretNameSuffix)
-}
-
-// GetTLSClientSecretName of this Provider.
-func (p *Provider) GetTLSClientSecretName() *string {
-	return GetSecretNameWithSuffix(p.GetName(), TLSClientSecretNameSuffix)
 }
 
 // GetAppliedImageConfigRefs of this Provider.
@@ -1028,28 +1014,6 @@ func (p *ConfigurationRevisionList) GetRevisions() []PackageRevision {
 	return prs
 }
 
-const (
-	// TLSServerSecretNameSuffix is the suffix added to the name of a secret that
-	// contains TLS server certificates.
-	TLSServerSecretNameSuffix = "-tls-server"
-	// TLSClientSecretNameSuffix is the suffix added to the name of a secret that
-	// contains TLS client certificates.
-	TLSClientSecretNameSuffix = "-tls-client"
-)
-
-// GetSecretNameWithSuffix returns a secret name with the given suffix.
-// K8s secret names can be at most 253 characters long, so we truncate the
-// name if necessary.
-func GetSecretNameWithSuffix(name, suffix string) *string {
-	if len(name) > 253-len(suffix) {
-		name = name[0 : 253-len(suffix)]
-	}
-
-	s := name + suffix
-
-	return &s
-}
-
 // GetCondition of this Function.
 func (f *Function) GetCondition(ct xpv2.ConditionType) xpv2.Condition {
 	return f.Status.GetCondition(ct)
@@ -1183,16 +1147,6 @@ func (f *Function) GetCommonAnnotations() map[string]string {
 // SetCommonAnnotations of this Function.
 func (f *Function) SetCommonAnnotations(a map[string]string) {
 	f.Spec.CommonAnnotations = a
-}
-
-// GetTLSServerSecretName of this Function.
-func (f *Function) GetTLSServerSecretName() *string {
-	return GetSecretNameWithSuffix(f.GetName(), TLSServerSecretNameSuffix)
-}
-
-// GetTLSClientSecretName of this Function.
-func (f *Function) GetTLSClientSecretName() *string {
-	return nil
 }
 
 // GetAppliedImageConfigRefs of this Function.
